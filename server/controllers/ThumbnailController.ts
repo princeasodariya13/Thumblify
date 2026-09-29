@@ -12,32 +12,32 @@ if (process.env.CLOUDINARY_URL) {
 
 const stylePrompts: Record<string, string> = {
   "Bold & Graphic":
-    "dramatic YouTube thumbnail, studio-lit subject with strong rim lighting, bold vibrant colors, high contrast composition, powerful emotional expression, dynamic angle, sharp focus, striking visual impact, professional thumbnail photography",
+    "dramatic studio lighting, bold vibrant colors, high contrast, powerful emotional expression, dynamic angle, sharp focus, striking visual impact, professional photography",
 
   "Tech/Futuristic":
-    "futuristic sci-fi scene, glowing blue and cyan holographic elements, dark sleek background, neon light accents, high-tech digital interface overlays, cinematic sci-fi lighting, ultra-detailed 3D render, cyberpunk aesthetic",
+    "futuristic sci-fi, glowing cyan holographic elements, dark background, neon light accents, high-tech digital overlays, cinematic sci-fi lighting, cyberpunk aesthetic",
 
   "Minimalist":
-    "clean minimalist composition, elegant simple layout, soft studio lighting, generous white or dark negative space, single focused subject, premium modern design, refined and sophisticated, muted harmonious palette",
+    "clean minimalist layout, soft studio lighting, dark negative space, single focused subject, premium modern design, refined and sophisticated",
 
   "Photorealistic":
-    "hyperrealistic professional photo, Canon EOS R5 camera, 50mm prime lens, f/2.0 aperture, shallow depth of field, soft creamy bokeh, natural window light, sharp crisp subject focus, editorial magazine quality",
+    "hyperrealistic photo, Canon EOS R5, 50mm lens, f/2.0 aperture, shallow depth of field, soft bokeh, natural light, sharp subject focus, editorial quality",
 
   "Illustrated":
-    "vibrant digital art illustration, bold flat design, clean vector style, dynamic character design, pop-art color palette, comic-inspired shading, cel-shaded look, sharp line art, modern graphic novel aesthetic",
+    "vibrant digital illustration, bold flat design, clean vector style, pop-art color palette, cel-shading, sharp line art, modern graphic style",
 };
 
 /* ---------------- COLOR SCHEMES ---------------- */
 
 const colorSchemeDescriptions: Record<string, string> = {
-  vibrant: "vivid saturated colors, electric hues, bold complementary contrasts, eye-popping visual energy",
-  sunset: "warm golden sunset tones, rich amber and coral oranges, deep magenta purple sky gradient, cinematic dusk atmosphere",
-  forest: "rich deep greens, earthy warm browns, golden dappled sunlight, lush organic natural palette",
-  neon: "electric neon glow, hot pink and cyan light streaks, deep dark background, cyberpunk light painting effect",
-  purple: "deep royal purple dominance, indigo and violet hues, moody and premium atmosphere, soft lilac highlights",
-  monochrome: "high-contrast black and white, dramatic deep shadows, stark bright highlights, timeless B&W photography",
-  ocean: "cool deep ocean blues, bright turquoise and teal, seafoam accents, crystal clear aquatic atmosphere",
-  pastel: "soft dreamy pastel palette, light airy tones, gentle blush pinks and baby blues, delicate and calming",
+  vibrant: "vivid saturated colors, bold complementary contrasts, eye-popping visual energy",
+  sunset: "warm golden sunset, amber and coral oranges, deep magenta purple sky, cinematic dusk",
+  forest: "rich deep greens, earthy warm browns, golden dappled sunlight, lush organic palette",
+  neon: "electric neon glow, hot pink and cyan streaks, deep dark background, cyberpunk lighting",
+  purple: "deep royal purple, indigo and violet hues, moody premium atmosphere, soft lilac highlights",
+  monochrome: "high-contrast black and white, dramatic deep shadows, stark highlights, timeless B&W",
+  ocean: "cool deep ocean blues, bright turquoise and teal, seafoam accents, crystal aquatic atmosphere",
+  pastel: "soft dreamy pastel palette, light airy tones, gentle blush pinks and baby blues, calming",
 };
 
 // Helper: Upload image buffer directly to Cloudinary without writing to disk
@@ -56,7 +56,7 @@ const uploadBufferToCloudinary = (buffer: Buffer): Promise<{ secure_url: string 
   });
 };
 
-/* ---------------- BUILD OPTIMIZED PROMPT ---------------- */
+/* ---------------- BUILD OPTIMIZED PROMPT (capped at 450 chars) ---------------- */
 
 const buildPrompt = (
   title: string,
@@ -67,42 +67,108 @@ const buildPrompt = (
   const selectedStyle = stylePrompts[style] || stylePrompts["Bold & Graphic"];
   const selectedColor = colorSchemeDescriptions[color_scheme] || colorSchemeDescriptions["vibrant"];
 
-  // Start with user's description (most specific detail first)
-  let parts: string[] = [];
+  const subject =
+    user_prompt && user_prompt.trim().length > 0
+      ? user_prompt.trim().substring(0, 250)
+      : `YouTube thumbnail: ${title}`;
 
-  if (user_prompt && user_prompt.trim().length > 0) {
-    parts.push(user_prompt.trim());
-  } else {
-    // Derive subject from title if no custom prompt
-    parts.push(`YouTube thumbnail image for: "${title}"`);
-  }
+  const prompt = `${subject}, ${selectedStyle}, ${selectedColor}, 8K ultra detailed, cinematic composition, no text no watermarks no logos, sharp focus`;
 
-  // Append style
-  parts.push(selectedStyle);
-
-  // Append color
-  parts.push(selectedColor);
-
-  // Universal quality boosters
-  parts.push(
-    "ultra high resolution 8K",
-    "cinematic composition",
-    "professional YouTube thumbnail",
-    "16:9 aspect ratio",
-    "no text, no watermarks, no logos",
-    "highly detailed, sharp focus",
-    "award-winning photography"
-  );
-
-  // Negative guidance appended as style direction
-  parts.push(
-    "avoid blurry, avoid distorted faces, avoid extra fingers, avoid cluttered composition, avoid gibberish text"
-  );
-
-  return parts.join(", ");
+  return prompt.substring(0, 450);
 };
 
-/* ---------------- GENERATE THUMBNAIL ---------------- */
+/* ---------------- ASYNC BACKGROUND GENERATION ---------------- */
+
+const generateImageInBackground = async (thumbnailId: string, fullPrompt: string): Promise<void> => {
+  let imageBuffer: Buffer | null = null;
+
+  const commonHeaders = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "image/webp,image/png,image/*,*/*",
+  };
+
+  /* 1. PRIMARY: Pollinations flux */
+  try {
+    const seed = Math.floor(Math.random() * 9999999);
+    const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(fullPrompt)}?width=1280&height=720&model=flux&seed=${seed}&nologo=true`;
+    console.log(`🎨 [${thumbnailId}] Pollinations flux...`);
+    const res = await axios.get(url, { responseType: "arraybuffer", headers: commonHeaders, timeout: 90000 });
+    if (res.status === 200 && res.data?.byteLength > 5000) {
+      imageBuffer = Buffer.from(res.data);
+      console.log(`✅ [${thumbnailId}] flux OK: ${imageBuffer.length} bytes`);
+    }
+  } catch (e: any) {
+    console.warn(`⚠️ [${thumbnailId}] flux failed: ${e.message}`);
+  }
+
+  /* 2. FALLBACK: Pollinations turbo */
+  if (!imageBuffer) {
+    try {
+      const seed2 = Math.floor(Math.random() * 9999999);
+      const url2 = `https://image.pollinations.ai/prompt/${encodeURIComponent(fullPrompt)}?width=1280&height=720&model=turbo&seed=${seed2}&nologo=true`;
+      console.log(`🎨 [${thumbnailId}] Pollinations turbo...`);
+      const res2 = await axios.get(url2, { responseType: "arraybuffer", headers: commonHeaders, timeout: 60000 });
+      if (res2.status === 200 && res2.data?.byteLength > 5000) {
+        imageBuffer = Buffer.from(res2.data);
+        console.log(`✅ [${thumbnailId}] turbo OK: ${imageBuffer.length} bytes`);
+      }
+    } catch (e: any) {
+      console.warn(`⚠️ [${thumbnailId}] turbo failed: ${e.message}`);
+    }
+  }
+
+  /* 3. LAST RESORT: HuggingFace FLUX.1-schnell */
+  if (!imageBuffer && process.env.HF_API_KEY) {
+    try {
+      console.log(`🎨 [${thumbnailId}] HuggingFace FLUX.1-schnell...`);
+      const hfRes = await axios.post(
+        "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell",
+        { inputs: fullPrompt },
+        {
+          headers: {
+            Authorization: `Bearer ${process.env.HF_API_KEY}`,
+            "Content-Type": "application/json",
+            "Accept": "image/jpeg",
+          },
+          responseType: "arraybuffer",
+          timeout: 60000,
+        }
+      );
+      if (hfRes.status === 200 && hfRes.data) {
+        imageBuffer = Buffer.from(hfRes.data);
+        console.log(`✅ [${thumbnailId}] HuggingFace OK: ${imageBuffer.length} bytes`);
+      }
+    } catch (e: any) {
+      console.warn(`⚠️ [${thumbnailId}] HuggingFace failed: ${e.message}`);
+    }
+  }
+
+  if (!imageBuffer) {
+    console.error(`❌ [${thumbnailId}] All engines failed.`);
+    await Thumbnail.findByIdAndUpdate(thumbnailId, { isGenerating: false });
+    return;
+  }
+
+  /* Upload to Cloudinary */
+  let finalImageUrl = "";
+  try {
+    const cloudResult = await uploadBufferToCloudinary(imageBuffer);
+    finalImageUrl = cloudResult.secure_url;
+    console.log(`✅ [${thumbnailId}] Cloudinary OK: ${finalImageUrl}`);
+  } catch (cloudErr: any) {
+    console.warn(`⚠️ [${thumbnailId}] Cloudinary failed, using base64: ${cloudErr.message}`);
+    finalImageUrl = `data:image/jpeg;base64,${imageBuffer.toString("base64")}`;
+  }
+
+  await Thumbnail.findByIdAndUpdate(thumbnailId, {
+    image_url: finalImageUrl,
+    isGenerating: false,
+  });
+
+  console.log(`🎉 [${thumbnailId}] Done!`);
+};
+
+/* ---------------- GENERATE THUMBNAIL (responds immediately) ---------------- */
 
 export const generateThumbnail = async (req: Request, res: Response) => {
   try {
@@ -121,16 +187,15 @@ export const generateThumbnail = async (req: Request, res: Response) => {
       text_overlay,
     } = req.body;
 
-    if (!title) {
+    if (!title || !title.trim()) {
       return res.status(400).json({ message: "Thumbnail title is required." });
     }
 
-    /* ---------------- SAVE DRAFT TO DB ---------------- */
-
+    /* Save draft record immediately — this is what the client gets back */
     const thumbnail = await Thumbnail.create({
       userId,
       title,
-      prompt_used: user_prompt,
+      prompt_used: user_prompt || "",
       style: style || "Bold & Graphic",
       aspect_ratio: aspect_ratio || "16:9",
       color_scheme: color_scheme || "vibrant",
@@ -138,130 +203,35 @@ export const generateThumbnail = async (req: Request, res: Response) => {
       isGenerating: true,
     });
 
-    /* ---------------- BUILD OPTIMIZED PROMPT ---------------- */
+    const fullPrompt = buildPrompt(title, user_prompt, style || "Bold & Graphic", color_scheme || "vibrant");
 
-    const fullPrompt = buildPrompt(
-      title,
-      user_prompt,
-      style || "Bold & Graphic",
-      color_scheme || "vibrant"
-    );
+    console.log(`🚀 [${thumbnail._id}] Async generation started`);
+    console.log(`📝 Prompt: ${fullPrompt.substring(0, 120)}...`);
 
-    console.log("🎨 Generating with prompt:", fullPrompt.substring(0, 200) + "...");
+    /*
+     * Fire-and-forget — generation happens AFTER we respond.
+     * The client navigates to /generate/:id and polls every 5s
+     * via fetchThumbnail() until isGenerating becomes false.
+     */
+    generateImageInBackground(thumbnail._id.toString(), fullPrompt).catch((err) => {
+      console.error(`❌ Background crash [${thumbnail._id}]:`, err.message);
+    });
 
-    let imageBuffer: Buffer | null = null;
-
-    /* ---------------- 1. PRIMARY: FLUX.1-dev via Pollinations (best quality) ---------------- */
-    try {
-      const seed = Math.floor(Math.random() * 9999999);
-      const fluxDevUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(fullPrompt)}?width=1280&height=720&model=flux&seed=${seed}&nologo=true&enhance=true`;
-      
-      console.log("Trying Flux (Pollinations)...");
-      const aiResponse = await axios.get(fluxDevUrl, {
-        responseType: "arraybuffer",
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-          "Accept": "image/webp,image/png,image/*,*/*",
-        },
-        timeout: 60000,
-      });
-
-      if (aiResponse.status === 200 && aiResponse.data && aiResponse.data.byteLength > 5000) {
-        imageBuffer = Buffer.from(aiResponse.data);
-        console.log(`✅ Flux generated image: ${imageBuffer.length} bytes`);
-      }
-    } catch (fluxErr: any) {
-      console.warn("⚠️ Flux primary engine failed:", fluxErr.message);
-    }
-
-    /* ---------------- 2. FALLBACK: Flux-Realism via Pollinations ---------------- */
-    if (!imageBuffer) {
-      try {
-        const seed2 = Math.floor(Math.random() * 9999999);
-        const fluxRealismUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(fullPrompt)}?width=1280&height=720&model=flux-realism&seed=${seed2}&nologo=true`;
-        
-        console.log("Trying Flux-Realism fallback...");
-        const fallbackResponse = await axios.get(fluxRealismUrl, {
-          responseType: "arraybuffer",
-          headers: {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-          },
-          timeout: 45000,
-        });
-
-        if (fallbackResponse.status === 200 && fallbackResponse.data && fallbackResponse.data.byteLength > 5000) {
-          imageBuffer = Buffer.from(fallbackResponse.data);
-          console.log(`✅ Flux-Realism fallback image: ${imageBuffer.length} bytes`);
-        }
-      } catch (fallbackErr: any) {
-        console.warn("⚠️ Flux-Realism fallback failed:", fallbackErr.message);
-      }
-    }
-
-    /* ---------------- 3. LAST RESORT: HuggingFace ---------------- */
-    if (!imageBuffer && process.env.HF_API_KEY) {
-      try {
-        console.log("Trying HuggingFace last resort...");
-        const hfResponse = await axios.post(
-          "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell",
-          { inputs: fullPrompt },
-          {
-            headers: {
-              Authorization: `Bearer ${process.env.HF_API_KEY}`,
-              "Content-Type": "application/json",
-              "Accept": "image/jpeg",
-            },
-            responseType: "arraybuffer",
-            timeout: 45000,
-          }
-        );
-        if (hfResponse.status === 200 && hfResponse.data) {
-          imageBuffer = Buffer.from(hfResponse.data);
-          console.log(`✅ HuggingFace fallback image: ${imageBuffer.length} bytes`);
-        }
-      } catch (hfErr: any) {
-        console.warn("⚠️ HuggingFace fallback failed:", hfErr.message);
-      }
-    }
-
-    if (!imageBuffer) {
-      thumbnail.isGenerating = false;
-      await thumbnail.save();
-      return res.status(500).json({ message: "Failed to generate AI thumbnail image. All engines failed. Please try again." });
-    }
-
-    /* ---------------- UPLOAD TO CLOUDINARY WITH FALLBACK ---------------- */
-    let finalImageUrl = "";
-
-    try {
-      const cloudResult = await uploadBufferToCloudinary(imageBuffer);
-      finalImageUrl = cloudResult.secure_url;
-      console.log("✅ Uploaded to Cloudinary:", finalImageUrl);
-    } catch (cloudErr: any) {
-      console.warn("⚠️ Cloudinary upload failed, using base64:", cloudErr.message);
-      finalImageUrl = `data:image/jpeg;base64,${imageBuffer.toString("base64")}`;
-    }
-
-    /* ---------------- UPDATE DB ---------------- */
-
-    thumbnail.image_url = finalImageUrl;
-    thumbnail.isGenerating = false;
-    await thumbnail.save();
-
-    /* ---------------- RESPONSE ---------------- */
-
+    /* Respond immediately — no timeout risk */
     return res.json({
-      message: "Thumbnail generated successfully",
+      message: "Thumbnail is being generated...",
       thumbnail,
     });
 
   } catch (error: any) {
-    console.error("❌ Thumbnail Error:", error.message);
+    console.error("❌ Generate route error:", error.message);
     return res.status(500).json({
-      message: error.message || "Thumbnail generation failed",
+      message: error.message || "Thumbnail generation failed. Please try again.",
     });
   }
 };
+
+
 
 /* ---------------- DELETE THUMBNAIL ---------------- */
 
