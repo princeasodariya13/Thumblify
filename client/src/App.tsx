@@ -15,6 +15,8 @@ import AboutPage from "./pages/AboutPage";
 import ContactSection from "./sections/ContactSection";
 import ForgetPassword from "./components/ForgetPassword";
 import Community from "./pages/Community";
+import { Analytics } from "@vercel/analytics/react";
+import { SpeedInsights } from "@vercel/speed-insights/react";
 
 export default function App() {
     
@@ -25,6 +27,8 @@ export default function App() {
     
     return (
         <>
+            <Analytics />
+            <SpeedInsights />
             <Toaster/>
             <LenisScroll />
             <Navbar />
