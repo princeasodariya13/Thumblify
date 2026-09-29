@@ -9,10 +9,11 @@ interface AuthContextProps{
     setUser : (user : IUser | null) => void;
     login:(user:{email :string;password:string})=> Promise<void>;
     signUp:(user:{name:string;email :string;password:string})=> Promise<void>;
+    googleLogin:(credential: string)=> Promise<void>;
     logout:()=>Promise<void>;
     forgotPassword: (email: string) => Promise<void>;
-verifyOtp: (email: string, otp: string) => Promise<boolean>;
-resetPassword: (email: string, newPassword: string, otp: string) => Promise<void>
+    verifyOtp: (email: string, otp: string) => Promise<boolean>;
+    resetPassword: (email: string, newPassword: string, otp: string) => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextProps>({
@@ -22,12 +23,14 @@ const AuthContext = createContext<AuthContextProps>({
     setUser:()=>{},
     login:async()=>{},
     signUp:async()=>{},
+    googleLogin:async()=>{},
     logout:async()=>{},
     forgotPassword: async () => {},
-verifyOtp: async () => false,
-resetPassword: async () => {}
+    verifyOtp: async () => false,
+    resetPassword: async () => {}
 
 })
+
 
 
 export const AuthProvider = ({children}:{children : React.ReactNode})=>{
@@ -71,6 +74,21 @@ export const AuthProvider = ({children}:{children : React.ReactNode})=>{
         }
     }
 
+     const googleLogin = async (token: string) => {
+        try {
+            const { data } = await api.post('/api/auth/google', { token });
+            if (data.user) {
+                setUser(data.user as IUser);
+                setIsLoggedIn(true);
+            }
+            toast.success(data.message || "Signed in with Google successfully!");
+        } catch (error: any) {
+            console.error("Google Auth error:", error);
+            const message = error.response?.data?.message || 'Google Login failed';
+            toast.error(message);
+        }
+    };
+
      const logout = async()=>{
          try {
             
@@ -92,10 +110,7 @@ export const AuthProvider = ({children}:{children : React.ReactNode})=>{
             if(data.user) {
                 setUser(data.user as IUser)
                 setIsLoggedIn(true)
-
             }
-
-            
 
         } catch (error : any) {
             if (error.response?.status === 401) {
@@ -152,9 +167,10 @@ const resetPassword = async (email: string, newPassword: string, otp: string) =>
     const value = {
   user, setUser,
   isLoggedIn, setIsLoggedIn,
-  signUp, login, logout,
+  signUp, login, googleLogin, logout,
   forgotPassword, verifyOtp, resetPassword
 };
+
 
     return(
         <AuthContext.Provider value={value}>

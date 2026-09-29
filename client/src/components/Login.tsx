@@ -3,10 +3,12 @@ import React from "react"
 import SoftBackdrop from "./SoftBackdrop"
 import { useAuth } from "../context/AuthContext"
 import { useNavigate } from "react-router"
+import { GoogleLogin } from "@react-oauth/google"
+
 const Login = () => {
    const [state, setState] = useState("login")
 
-   const {user , login , signUp} = useAuth()
+   const { user, login, signUp, googleLogin } = useAuth()
 
    const navigate = useNavigate()
 
@@ -44,8 +46,8 @@ const Login = () => {
       <div className="min-h-screen flex items-center justify-center"> 
             <form
                 onSubmit={handleSubmit}
-                className="w-full sm:w-87.5 text-center bg-white/6 border border-white/10 rounded-2xl px-8">
-                <h1 className="text-white text-3xl mt-10 font-medium">
+                className="w-full sm:w-87.5 text-center bg-white/6 border border-white/10 rounded-2xl px-8 py-2">
+                <h1 className="text-white text-3xl mt-8 font-medium">
                     {state === "login" ? "Login" : "Sign up"}
                 </h1>
 
@@ -69,16 +71,38 @@ const Login = () => {
                 </div>
 
                 <div className="mt-4 text-left">
-                    <button className="text-sm text-pink-400 hover:underline"  onClick={() => navigate('/forgetpassword')}>
+                    <button type="button" className="text-sm text-pink-400 hover:underline" onClick={() => navigate('/forgetpassword')}>
                         Forget password?
                     </button>
                 </div>
 
-                <button type="submit" className="mt-2 w-full h-11 rounded-full text-white bg-pink-600 hover:bg-pink-500 transition " >
+                <button type="submit" className="mt-2 w-full h-11 rounded-full text-white bg-pink-600 hover:bg-pink-500 transition cursor-pointer" >
                     {state === "login" ? "Login" : "Sign up"}
                 </button>
 
-                <p onClick={() => setState(prev => prev === "login" ? "register" : "login")} className="text-gray-400 text-sm mt-3 mb-11 cursor-pointer" >
+                <div className="flex items-center my-4">
+                    <div className="flex-grow border-t border-white/10"></div>
+                    <span className="px-3 text-xs text-gray-400 uppercase">OR</span>
+                    <div className="flex-grow border-t border-white/10"></div>
+                </div>
+
+                <div className="flex justify-center w-full my-2">
+                    <GoogleLogin
+                        onSuccess={(credentialResponse) => {
+                            if (credentialResponse.credential) {
+                                googleLogin(credentialResponse.credential);
+                            }
+                        }}
+                        onError={() => {
+                            console.log("Google Login Failed");
+                        }}
+                        theme="filled_black"
+                        shape="pill"
+                        text={state === "login" ? "signin_with" : "signup_with"}
+                    />
+                </div>
+
+                <p onClick={() => setState(prev => prev === "login" ? "register" : "login")} className="text-gray-400 text-sm mt-4 mb-6 cursor-pointer" >
                     {state === "login" ? "Don't have an account?" : "Already have an account?"}
                     <span className="text-pink-400 hover:underline ml-1">click here</span>
                 </p>
@@ -90,4 +114,4 @@ const Login = () => {
   )
 }
 
-export default Login
+export default Login
