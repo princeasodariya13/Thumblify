@@ -168,6 +168,63 @@ const generateImageInBackground = async (thumbnailId: string, fullPrompt: string
   console.log(`🎉 [${thumbnailId}] Done!`);
 };
 
+/* ---------------- REGENERATE THUMBNAIL (update existing, responds immediately) ---------------- */
+
+export const regenerateThumbnail = async (req: Request, res: Response) => {
+  try {
+    const { userId } = req.session;
+    const { id } = req.params;
+
+    if (!userId) {
+      return res.status(401).json({ message: "User not logged in." });
+    }
+
+    const thumbnail = await Thumbnail.findOne({ _id: id, userId });
+    if (!thumbnail) {
+      return res.status(404).json({ message: "Thumbnail not found." });
+    }
+
+    // Get optional updated fields from body (user may have changed title/prompt/style etc.)
+    const { title, prompt: user_prompt, style, aspect_ratio, color_scheme } = req.body;
+
+    // Update fields if provided
+    if (title && title.trim()) thumbnail.title = title.trim();
+    if (user_prompt !== undefined) thumbnail.prompt_used = user_prompt;
+    if (style) thumbnail.style = style;
+    if (aspect_ratio) thumbnail.aspect_ratio = aspect_ratio;
+    if (color_scheme) thumbnail.color_scheme = color_scheme;
+
+    // Reset generation state
+    thumbnail.isGenerating = true;
+    thumbnail.image_url = "";
+    await thumbnail.save();
+
+    const fullPrompt = buildPrompt(
+      thumbnail.title,
+      thumbnail.prompt_used || undefined,
+      thumbnail.style || "Bold & Graphic",
+      thumbnail.color_scheme || "vibrant"
+    );
+
+    console.log(`🔄 [${thumbnail._id}] Regenerating async...`);
+
+    generateImageInBackground(thumbnail._id.toString(), fullPrompt).catch((err) => {
+      console.error(`❌ Regen crash [${thumbnail._id}]:`, err.message);
+    });
+
+    return res.json({
+      message: "Thumbnail is being regenerated...",
+      thumbnail,
+    });
+
+  } catch (error: any) {
+    console.error("❌ Regenerate route error:", error.message);
+    return res.status(500).json({
+      message: error.message || "Regeneration failed. Please try again.",
+    });
+  }
+};
+
 /* ---------------- GENERATE THUMBNAIL (responds immediately) ---------------- */
 
 export const generateThumbnail = async (req: Request, res: Response) => {

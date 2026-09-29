@@ -62,6 +62,34 @@ const Generate = () => {
       }
   }
 
+  const handleRegenerate = async () => {
+      if(!isLoggedIn) return toast.error('Please Login to regenerate')
+      if(!id) return;
+      if(!title.trim()) return toast.error('Title is required')
+      setLoading(true);
+      setThumbnail(prev => prev ? { ...prev, isGenerating: true, image_url: '' } : prev);
+
+      try {
+        const api_payload = {
+          title,
+          prompt : additionalDetails,
+          style,
+          aspect_ratio : aspectRatio,
+          color_scheme : colorSchemeId,
+        }
+
+        const {data} = await api.post(`/api/thumbnail/regenerate/${id}`, api_payload)
+        if(data.thumbnail){
+          toast.success('Regenerating your thumbnail...')
+          // Stay on same page — polling interval will pick up the new image
+        }
+      } catch (error: any) {
+        setLoading(false);
+        const msg = error?.response?.data?.message || error?.message || "Failed to regenerate thumbnail";
+        toast.error(msg);
+      }
+  }
+
 
  //Dummmy data ne import dummyThumbnails from assets
 
@@ -78,40 +106,48 @@ const Generate = () => {
 
 
   const fetchThumbnail = async () => {
-    //Dummmy data
-
-    //details of above here
-
     try {
       const { data } = await api.get(`/api/user/thumbnails/${id}`)
+      const thumb = data?.thumbnail as IThumbnail
 
-      setThumbnail(data?.thumbnail as IThumbnail)
-      setLoading(!data?.thumbnail?.image_url)
-      setAdditionalDetails(data?.thumbnail?.prompt_used || "")
-      setTitle(data?.thumbnail?.title)
-      setColorSchemeId(data?.thumbnail?.color_scheme)
-      setAspectRatio(data?.thumbnail?.aspect_ratio)
-      setStyle(data?.thumbnail?.style)
+      setThumbnail(thumb)
+      setAdditionalDetails(thumb?.prompt_used || "")
+      setTitle(thumb?.title || "")
+      setColorSchemeId(thumb?.color_scheme || "vibrant")
+      setAspectRatio(thumb?.aspect_ratio || "16:9")
+      setStyle(thumb?.style || "Bold & Graphic")
 
-
-    } catch (error : any) {
+      if (thumb?.image_url && !thumb?.isGenerating) {
+        // ✅ Image is ready — stop loading
+        setLoading(false)
+      } else {
+        // ⏳ Still generating — keep loading true so polling interval keeps running
+        // This also handles the case where user navigated away and came back
+        setLoading(true)
+      }
+    } catch (error: any) {
       console.log(error)
       toast.error(error?.response?.data?.message || error.message)
-    } 
-
+      setLoading(false)
+    }
   }
 
-  useEffect(()=>{
-    if(isLoggedIn && id){
+
+  // Fetch once on mount / when id or auth changes
+  useEffect(() => {
+    if (isLoggedIn && id) {
       fetchThumbnail();
     }
-    if(id && loading && isLoggedIn){
-      const interval =  setInterval(()=>{
-        fetchThumbnail()
-      },5000)
-      return ()=>clearInterval(interval)
-    }
-  },[id,loading,isLoggedIn])
+  }, [id, isLoggedIn])
+
+  // Dedicated polling interval — runs every 5s while loading is true
+  useEffect(() => {
+    if (!id || !loading || !isLoggedIn) return;
+    const interval = setInterval(() => {
+      fetchThumbnail()
+    }, 5000)
+    return () => clearInterval(interval)
+  }, [id, loading, isLoggedIn])
 
   useEffect(()=>{
     if(!id && thumbnail){
@@ -179,7 +215,7 @@ const Generate = () => {
                   {id ? (
                     <div className="space-y-3">
                       <button 
-                        onClick={handleGenerate} 
+                        onClick={handleRegenerate} 
                         disabled={loading} 
                         className="text-[15px] w-full py-3 rounded-xl font-medium bg-pink-600 hover:bg-pink-500 text-white transition-colors cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50"
                       >
