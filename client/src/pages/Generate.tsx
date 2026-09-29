@@ -177,14 +177,28 @@ const Generate = () => {
 
                   {/* Action Buttons */}
                   {id ? (
-                    <button onClick={handleCreateNew} className="text-[15px] w-full py-3.5 rounded-xl font-medium bg-linear-to-b from-pink-500 to-pink-600 hover:from-pink-700 transition-colors cursor-pointer flex items-center justify-center gap-2">
-                      ✨ Create Another Thumbnail
-                    </button>
+                    <div className="space-y-3">
+                      <button 
+                        onClick={handleGenerate} 
+                        disabled={loading} 
+                        className="text-[15px] w-full py-3 rounded-xl font-medium bg-pink-600 hover:bg-pink-500 text-white transition-colors cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50"
+                      >
+                        {loading ? 'Regenerating...' : '🔄 Regenerate Image'}
+                      </button>
+
+                      <button 
+                        onClick={handleCreateNew} 
+                        className="text-[15px] w-full py-3 rounded-xl font-medium bg-white/10 hover:bg-white/15 text-zinc-200 border border-white/10 transition-colors cursor-pointer flex items-center justify-center gap-2"
+                      >
+                        ✨ Generate New Image
+                      </button>
+                    </div>
                   ) : (
                     <button onClick={handleGenerate} disabled={loading} className="text-[15px] w-full py-3.5 rounded-xl font-medium bg-linear-to-b from-pink-500 to-pink-600 hover:from-pink-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer">
                       {loading ? 'Generating ...' : 'Generate Thumbnail'}
                     </button>
                   )}
+
                 </div>
 
 

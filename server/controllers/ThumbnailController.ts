@@ -105,10 +105,10 @@ export const generateThumbnail = async (req: Request, res: Response) => {
 
     let imageBuffer: Buffer | null = null;
 
-    /* ---------------- 1. TRY BLACK-FOREST-LABS/FLUX.1-DEV AI GENERATION ENGINE ---------------- */
+    /* ---------------- 1. FLUX AI GENERATION ENGINE ---------------- */
     try {
-      const fluxDevUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(fullPrompt)}?width=1280&height=720&model=flux-dev&nologo=true`;
-      const aiResponse = await axios.get(fluxDevUrl, {
+      const fluxUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(fullPrompt)}?width=1280&height=720&model=flux&nologo=true`;
+      const aiResponse = await axios.get(fluxUrl, {
         responseType: "arraybuffer",
         headers: {
           "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
@@ -120,8 +120,9 @@ export const generateThumbnail = async (req: Request, res: Response) => {
         imageBuffer = Buffer.from(aiResponse.data);
       }
     } catch (fluxErr: any) {
-      console.warn("FLUX.1-dev primary engine notice:", fluxErr.message);
+      console.warn("Flux primary engine notice:", fluxErr.message);
     }
+
 
 
     /* ---------------- 2. HUGGING FACE BACKUP FALLBACK ---------------- */
