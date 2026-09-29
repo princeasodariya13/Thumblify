@@ -102,17 +102,44 @@ const Community = () => {
                     </div>
                   </div>
 
-                  {/* Hover Icons Overlay */}
-                  <div onClick={(e) => e.stopPropagation()} className="absolute bottom-2 right-2 max-sm:flex sm:hidden group-hover:flex gap-1.5 z-10">
-                    <DownloadIcon 
-                      onClick={() => handleDownload(thumb.image_url!)}
-                      className="size-6 bg-black/50 p-1 rounded hover:bg-pink-600 transition-all cursor-pointer text-white" 
-                    />
+                  {/* Hover Icons Overlay with Floating Tooltips */}
+                  <div onClick={(e) => e.stopPropagation()} className="absolute bottom-2 right-2 max-sm:flex sm:hidden group-hover:flex items-center gap-1.5 z-10">
+                    
+                    {/* Download Button */}
+                    <div className="relative group/tooltip">
+                      <button
+                        onClick={() => handleDownload(thumb.image_url!)}
+                        className="size-7 bg-black/70 p-1.5 rounded-lg hover:bg-pink-600 transition-all cursor-pointer text-white flex items-center justify-center backdrop-blur-md border border-white/10"
+                      >
+                        <DownloadIcon className="size-full" />
+                      </button>
+                      <div className="absolute -top-9 left-1/2 -translate-x-1/2 opacity-0 group-hover/tooltip:opacity-100 transition-all duration-200 pointer-events-none z-30">
+                        <div className="bg-zinc-900/95 text-white border border-white/15 text-[11px] font-medium px-2 py-0.5 rounded-md shadow-xl whitespace-nowrap">
+                          Download
+                        </div>
+                        <div className="w-1.5 h-1.5 bg-zinc-900/95 rotate-45 mx-auto -mt-1 border-r border-b border-white/15"></div>
+                      </div>
+                    </div>
 
-                    <Link target="_blank" to={`/preview?thumbnail_url=${thumb.image_url}&title=${thumb.title}`}>
-                      <ArrowUpRightIcon className="size-6 bg-black/50 p-1 rounded hover:bg-pink-600 transition-all text-white cursor-pointer"/>
-                    </Link>
+                    {/* YT Preview Button */}
+                    <div className="relative group/tooltip">
+                      <Link 
+                        target="_blank" 
+                        to={`/preview?thumbnail_url=${encodeURIComponent(thumb.image_url || '')}&title=${encodeURIComponent(thumb.title)}`}
+                        className="size-7 bg-black/70 p-1.5 rounded-lg hover:bg-pink-600 transition-all text-white flex items-center justify-center backdrop-blur-md border border-white/10 cursor-pointer"
+                      >
+                        <ArrowUpRightIcon className="size-full" />
+                      </Link>
+                      <div className="absolute -top-9 left-1/2 -translate-x-1/2 opacity-0 group-hover/tooltip:opacity-100 transition-all duration-200 pointer-events-none z-30">
+                        <div className="bg-zinc-900/95 text-white border border-white/15 text-[11px] font-medium px-2 py-0.5 rounded-md shadow-xl whitespace-nowrap">
+                          YT Preview
+                        </div>
+                        <div className="w-1.5 h-1.5 bg-zinc-900/95 rotate-45 mx-auto -mt-1 border-r border-b border-white/15"></div>
+                      </div>
+                    </div>
+
                   </div>
+
                 </div>
               )
             })}

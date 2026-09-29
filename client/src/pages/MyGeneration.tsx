@@ -8,45 +8,34 @@ import api from "../configs/api"
 import toast from "react-hot-toast"
 
 const MyGeneration = () => {
-
-
   const { isLoggedIn } = useAuth()
-
   const navigate = useNavigate();
 
   const aspectRatioClassMap : Record<string, string> = {
-     "16:9": "aspect-video",
+    "16:9": "aspect-video",
     "1:1": "aspect-square",
     "9:16": "aspect-[9/16]"
   }
 
-  const [thumbnails,setThumbnails] =useState<IThumbnail[]>([])
-  const [loading,setLoading] = useState(false)
+  const [thumbnails, setThumbnails] = useState<IThumbnail[]>([])
+  const [loading, setLoading] = useState(false)
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
-//   fetching thumbnail from dummy data
-// setThumbnails(dummyThumbnails as unknown as IThumbnail[])
-//     setLoading(false)
-
-  
-  const fetchThumbnail = async()=>{
-
+  const fetchThumbnail = async () => {
     try {
       setLoading(true)
-      const {data} = await api.get('/api/user/thumbnails')
+      const { data } = await api.get('/api/user/thumbnails')
       setThumbnails(data.thumbnails || [])
-    } catch (error:any) {
+    } catch (error: any) {
       console.error(error);
       toast.error(error?.response?.data?.message || error.message)
-    }
-    finally{
+    } finally {
       setLoading(false)
     }
-    
-    
   }
 
-  const handleDownload = (image_url : string)=>{
-    // window.open(image_url , '_blank')
+  const handleDownload = (image_url : string) => {
     const link = document.createElement('a');
     link.href = image_url.replace('/upload','/upload/fl_attachment')
     document.body.appendChild(link)
@@ -54,22 +43,19 @@ const MyGeneration = () => {
     link.remove()
   }
 
-
-  const handleDelete = async (id:string)=>{
-    console.log(id)
+  const confirmDelete = async () => {
+    if (!deleteTargetId) return;
     try {
-      const confirm = window.confirm('Are you sure want to delete thumbnail')
-      if(!confirm) return;
-      const {data} = await api.delete(`/api/thumbnail/delete/${id}`)
-
-      toast.success(data.message)
-
-      setThumbnails(thumbnails.filter((t)=>t._id!==id))
-
-      
-    } catch (error:any) {
+      setDeleting(true);
+      const { data } = await api.delete(`/api/thumbnail/delete/${deleteTargetId}`);
+      toast.success(data.message || "Thumbnail deleted successfully");
+      setThumbnails(thumbnails.filter((t) => t._id !== deleteTargetId));
+      setDeleteTargetId(null);
+    } catch (error: any) {
       console.error(error);
-      toast.error(error?.response?.data?.message || error.message)
+      toast.error(error?.response?.data?.message || "Failed to delete thumbnail");
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -86,12 +72,11 @@ const MyGeneration = () => {
     }
   }
 
-  useEffect(()=>{
-    if(isLoggedIn){
-
+  useEffect(() => {
+    if (isLoggedIn) {
       fetchThumbnail()
     }
-  },[isLoggedIn])
+  }, [isLoggedIn])
 
   return (
     <>
@@ -105,17 +90,14 @@ const MyGeneration = () => {
         </p>
       </div>
 
-
       {/* LOADING */}
       {loading && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           {Array.from({length: 6}).map((_,i)=>(
             <div key={i} className="rounded-2xl bg-white/6 border border-white/10 animate-pulse h-[260px]"/>
           ))}
-
         </div>
       )}
-
 
       {/* Empty State */}
       {!loading && thumbnails.length === 0 && (
@@ -134,7 +116,6 @@ const MyGeneration = () => {
             <div key={thumb._id} onClick={()=>navigate(`/generate/${thumb._id}`)} className="mb-8 group relative cursor-pointer rounded-2xl bg-white/6 border border-white/10 transition shadow-xl break-inside-avoid">
                 
                 {/* IMAGE */}
-
                 <div className={`relative overflow-hidden rounded-t-2xl ${aspectClass} bg-black`}>
                   {thumb.image_url ? (
                     <img src={thumb.image_url} alt={thumb.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
@@ -145,7 +126,6 @@ const MyGeneration = () => {
                   )}
 
                   {thumb.isGenerating && <div className="absolute inset-0 bg-black/50 flex items-center justify-center text-sm font-medium text-white">Generating...</div>}
-
                 </div>
 
                 {/* Content */}
@@ -156,49 +136,120 @@ const MyGeneration = () => {
                     <span className="px-2 py-0.5 rounded bg-white/8">{thumb.style}</span>
                     <span className="px-2 py-0.5 rounded bg-white/8">{thumb.color_scheme}</span>
                     <span className="px-2 py-0.5 rounded bg-white/8">{thumb.aspect_ratio}</span>
-
-
                   </div>
 
                   <p className="text-xs text-zinc-500">{new Date(thumb.createdAt!).toDateString()}</p>
                 </div>
 
-                <div onClick={(e)=>e.stopPropagation()} className="absolute bottom-2 right-2 max-sm:flex sm:hidden group-hover:flex gap-1.5">
+                {/* Hover Icon Action Bar with Floating Tooltips */}
+                <div onClick={(e)=>e.stopPropagation()} className="absolute bottom-2 right-2 max-sm:flex sm:hidden group-hover:flex items-center gap-1.5 z-20">
+                  
+                  {/* Eye Toggle Public Button */}
+                  <div className="relative group/tooltip">
+                    <button 
+                      onClick={() => handleTogglePublic(thumb._id)}
+                      className="size-7 bg-black/70 p-1.5 rounded-lg hover:bg-pink-600 transition-all cursor-pointer text-white flex items-center justify-center backdrop-blur-md border border-white/10"
+                    >
+                      {thumb.isPublic ? <EyeIcon className="size-full" /> : <EyeOffIcon className="size-full" />}
+                    </button>
+                    <div className="absolute -top-9 left-1/2 -translate-x-1/2 opacity-0 group-hover/tooltip:opacity-100 transition-all duration-200 pointer-events-none z-30">
+                      <div className="bg-zinc-900/95 text-white border border-white/15 text-[11px] font-medium px-2 py-0.5 rounded-md shadow-xl whitespace-nowrap">
+                        {thumb.isPublic ? "Make Private" : "Make Public"}
+                      </div>
+                      <div className="w-1.5 h-1.5 bg-zinc-900/95 rotate-45 mx-auto -mt-1 border-r border-b border-white/15"></div>
+                    </div>
+                  </div>
 
-                  <button 
-                    onClick={() => handleTogglePublic(thumb._id)}
-                    className="size-6 bg-black/50 p-1 rounded hover:bg-pink-600 transition-all cursor-pointer text-white flex items-center justify-center"
-                    title={thumb.isPublic ? "Make Private" : "Make Public"}
-                  >
-                    {thumb.isPublic ? <EyeIcon className="size-full" /> : <EyeOffIcon className="size-full" />}
-                  </button>
+                  {/* Delete Button */}
+                  <div className="relative group/tooltip">
+                    <button 
+                      onClick={() => setDeleteTargetId(thumb._id)}
+                      className="size-7 bg-black/70 p-1.5 rounded-lg hover:bg-pink-600 transition-all cursor-pointer text-white flex items-center justify-center backdrop-blur-md border border-white/10"
+                    >
+                      <TrashIcon className="size-full" />
+                    </button>
+                    <div className="absolute -top-9 left-1/2 -translate-x-1/2 opacity-0 group-hover/tooltip:opacity-100 transition-all duration-200 pointer-events-none z-30">
+                      <div className="bg-zinc-900/95 text-white border border-white/15 text-[11px] font-medium px-2 py-0.5 rounded-md shadow-xl whitespace-nowrap">
+                        Delete
+                      </div>
+                      <div className="w-1.5 h-1.5 bg-zinc-900/95 rotate-45 mx-auto -mt-1 border-r border-b border-white/15"></div>
+                    </div>
+                  </div>
 
-                  <TrashIcon onClick={()=>handleDelete(thumb._id)} className="size-6 bg-black/50 p-1 rounded hover:bg-pink-600 transition-all cursor-pointer text-white"/>
+                  {/* Download Button */}
+                  <div className="relative group/tooltip">
+                    <button 
+                      onClick={() => handleDownload(thumb.image_url!)}
+                      className="size-7 bg-black/70 p-1.5 rounded-lg hover:bg-pink-600 transition-all cursor-pointer text-white flex items-center justify-center backdrop-blur-md border border-white/10"
+                    >
+                      <DownloadIcon className="size-full" />
+                    </button>
+                    <div className="absolute -top-9 left-1/2 -translate-x-1/2 opacity-0 group-hover/tooltip:opacity-100 transition-all duration-200 pointer-events-none z-30">
+                      <div className="bg-zinc-900/95 text-white border border-white/15 text-[11px] font-medium px-2 py-0.5 rounded-md shadow-xl whitespace-nowrap">
+                        Download
+                      </div>
+                      <div className="w-1.5 h-1.5 bg-zinc-900/95 rotate-45 mx-auto -mt-1 border-r border-b border-white/15"></div>
+                    </div>
+                  </div>
 
-                  <DownloadIcon 
-                  onClick={()=>handleDownload(thumb.image_url!)}
-                  className="size-6 bg-black/50 p-1 rounded hover:bg-pink-600 transition-all cursor-pointer text-white" />
+                  {/* Preview Button */}
+                  <div className="relative group/tooltip">
+                    <Link 
+                      target="_blank" 
+                      to={`/preview?thumbnail_url=${encodeURIComponent(thumb.image_url || '')}&title=${encodeURIComponent(thumb.title)}`}
+                      className="size-7 bg-black/70 p-1.5 rounded-lg hover:bg-pink-600 transition-all text-white flex items-center justify-center backdrop-blur-md border border-white/10 cursor-pointer"
+                    >
+                      <ArrowUpRightIcon className="size-full" />
+                    </Link>
+                    <div className="absolute -top-9 left-1/2 -translate-x-1/2 opacity-0 group-hover/tooltip:opacity-100 transition-all duration-200 pointer-events-none z-30">
+                      <div className="bg-zinc-900/95 text-white border border-white/15 text-[11px] font-medium px-2 py-0.5 rounded-md shadow-xl whitespace-nowrap">
+                        YT Preview
+                      </div>
+                      <div className="w-1.5 h-1.5 bg-zinc-900/95 rotate-45 mx-auto -mt-1 border-r border-b border-white/15"></div>
+                    </div>
+                  </div>
 
-                  <Link target="_blank" to={`/preview?thumbnail_url=${thumb.image_url}&title=${thumb.title}`}>
-                  <ArrowUpRightIcon className="size-6 bg-black/50 p-1 rounded hover:bg-pink-600 transition-all text-white"/>
-                  </Link>
                 </div> 
 
             </div>
           )
-
         })}
-
       </div>
     )}
-
     </div>
 
-
-   
-
+    {/* DELETE CONFIRMATION MODAL */}
+    {deleteTargetId && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+        <div className="w-full max-w-sm rounded-2xl bg-zinc-900/95 border border-white/15 p-6 text-center shadow-2xl space-y-4">
+          <div className="mx-auto size-12 rounded-full bg-pink-500/15 border border-pink-500/30 flex items-center justify-center text-pink-400">
+            <TrashIcon className="size-6" />
+          </div>
+          <div>
+            <h3 className="text-lg font-bold text-white">Delete Thumbnail</h3>
+            <p className="text-xs text-zinc-400 mt-1">Are you sure you want to delete this thumbnail? This action cannot be undone.</p>
+          </div>
+          <div className="flex gap-3 pt-2">
+            <button
+              onClick={() => setDeleteTargetId(null)}
+              disabled={deleting}
+              className="flex-1 py-2.5 rounded-xl border border-white/12 text-sm font-medium text-zinc-300 hover:bg-white/5 transition cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={confirmDelete}
+              disabled={deleting}
+              className="flex-1 py-2.5 rounded-xl bg-pink-600 hover:bg-pink-500 text-sm font-medium text-white transition cursor-pointer"
+            >
+              {deleting ? 'Deleting...' : 'Yes, Delete'}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
     </>
   )
 }
 
-export default MyGeneration
+export default MyGeneration
