@@ -59,6 +59,13 @@ app.use(cors({
     credentials: true
 }))
 
+// Cross-Origin-Opener-Policy for Google OAuth popups
+app.use((_req, res, next) => {
+    res.header("Cross-Origin-Opener-Policy", "same-origin-allow-popups");
+    next();
+});
+
+
 
 app.use(session({
     secret:process.env.SESSION_SECRET as string,

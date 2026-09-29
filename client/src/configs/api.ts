@@ -1,9 +1,10 @@
 import axios from "axios";
 
 const api = axios.create({
-  baseURL: "http://localhost:3000",
+  baseURL: import.meta.env.VITE_BASE_URL || "http://localhost:3000",
   withCredentials: true,
 });
+
 
 // Silently handle 401 on /verify — expected when user is not logged in
 api.interceptors.response.use(
