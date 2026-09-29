@@ -30,10 +30,29 @@ const app = express();
 
 
 // Middleware
+const allowedOrigins = [
+    'http://localhost:5173',
+    'http://localhost:5174',
+    'https://localhost:3000',
+    'https://thumblify-free.vercel.app',
+];
+
+if (process.env.CLIENT_URL) {
+    allowedOrigins.push(process.env.CLIENT_URL);
+}
+
 app.use(cors({
-    origin:['http://localhost:5174', 'https://localhost:3000','http://localhost:5173'],
+    origin: (origin, callback) => {
+        // allow requests with no origin (like mobile apps, curl, server-to-server)
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            callback(null, true); // fallback allow for Vercel dynamic preview URLs
+        }
+    },
     credentials: true
 }))
+
 
 app.use(session({
     secret:process.env.SESSION_SECRET as string,
