@@ -10,34 +10,34 @@ if (process.env.CLOUDINARY_URL) {
 
 /* ---------------- STYLE PROMPTS ---------------- */
 
-const stylePrompts = {
+const stylePrompts: Record<string, string> = {
   "Bold & Graphic":
-    "bold and graphic YouTube thumbnail style, hyper-expressive emotions, dramatic studio rim lighting, extremely high contrast, crisp vector-like edges, vibrant maximalist composition, clickbait aesthetic, thick outlines, vivid and intense rendering",
+    "dramatic YouTube thumbnail, studio-lit subject with strong rim lighting, bold vibrant colors, high contrast composition, powerful emotional expression, dynamic angle, sharp focus, striking visual impact, professional thumbnail photography",
 
   "Tech/Futuristic":
-    "high-tech futuristic aesthetic, cyberpunk atmosphere, glowing neon circuit accents, holographic HUD UI elements, sleek metallic textures, cinematic sci-fi lighting, 3D rendered, intricate digital details, dark background with bright glowing accents",
+    "futuristic sci-fi scene, glowing blue and cyan holographic elements, dark sleek background, neon light accents, high-tech digital interface overlays, cinematic sci-fi lighting, ultra-detailed 3D render, cyberpunk aesthetic",
 
   "Minimalist":
-    "sleek minimalist composition, lots of negative space, clean flat design elements, soft diffused studio lighting, modern elegant aesthetic, clutter-free layout, highly readable, matte textures, sophisticated simplicity",
+    "clean minimalist composition, elegant simple layout, soft studio lighting, generous white or dark negative space, single focused subject, premium modern design, refined and sophisticated, muted harmonious palette",
 
   "Photorealistic":
-    "ultra-photorealistic quality, shot on 35mm lens, f/1.8 aperture, shallow depth of field with creamy bokeh background, crisp sharp focus on the main subject, highly detailed 8k photography, natural volumetric lighting, cinematic color grading",
+    "hyperrealistic professional photo, Canon EOS R5 camera, 50mm prime lens, f/2.0 aperture, shallow depth of field, soft creamy bokeh, natural window light, sharp crisp subject focus, editorial magazine quality",
 
   "Illustrated":
-    "premium digital illustration, vibrant 2D vector graphic style, cell-shaded, dynamic character posing, expressive pop-art influences, clean flat shading, colorful and eye-catching comic book or modern animation aesthetic",
+    "vibrant digital art illustration, bold flat design, clean vector style, dynamic character design, pop-art color palette, comic-inspired shading, cel-shaded look, sharp line art, modern graphic novel aesthetic",
 };
 
 /* ---------------- COLOR SCHEMES ---------------- */
 
-const colorSchemeDescriptions = {
-  vibrant: "highly saturated, punchy vivid hues, intense complementary color contrast, eye-popping brightness",
-  sunset: "cinematic golden hour lighting with rich orange, warm glowing yellow, and deep purple gradients, epic sky tones",
-  forest: "lush earthy tones, deep moss green, warm wood browns, soft sunlight filtering through canopy, organic natural vibe",
-  neon: "intense cyberpunk neon lights, electric cyan blues, hot magenta pinks, dark contrasting shadows",
-  purple: "rich royal purple, moody violet tones, soft lilac highlights, mysterious and premium modern ambiance",
-  monochrome: "pure black and white, dramatic chiaroscuro lighting, intense shadows, timeless high-contrast grayscale art",
-  ocean: "refreshing aquatic vibes, deep navy blue, bright cyan, seafoam green, crystal clear underwater vibes",
-  pastel: "soft muted pastel tones, light baby blue, pale pink, mint green, dreamy and calm washed-out aesthetic",
+const colorSchemeDescriptions: Record<string, string> = {
+  vibrant: "vivid saturated colors, electric hues, bold complementary contrasts, eye-popping visual energy",
+  sunset: "warm golden sunset tones, rich amber and coral oranges, deep magenta purple sky gradient, cinematic dusk atmosphere",
+  forest: "rich deep greens, earthy warm browns, golden dappled sunlight, lush organic natural palette",
+  neon: "electric neon glow, hot pink and cyan light streaks, deep dark background, cyberpunk light painting effect",
+  purple: "deep royal purple dominance, indigo and violet hues, moody and premium atmosphere, soft lilac highlights",
+  monochrome: "high-contrast black and white, dramatic deep shadows, stark bright highlights, timeless B&W photography",
+  ocean: "cool deep ocean blues, bright turquoise and teal, seafoam accents, crystal clear aquatic atmosphere",
+  pastel: "soft dreamy pastel palette, light airy tones, gentle blush pinks and baby blues, delicate and calming",
 };
 
 // Helper: Upload image buffer directly to Cloudinary without writing to disk
@@ -54,6 +54,52 @@ const uploadBufferToCloudinary = (buffer: Buffer): Promise<{ secure_url: string 
     );
     uploadStream.end(buffer);
   });
+};
+
+/* ---------------- BUILD OPTIMIZED PROMPT ---------------- */
+
+const buildPrompt = (
+  title: string,
+  user_prompt: string | undefined,
+  style: string,
+  color_scheme: string
+): string => {
+  const selectedStyle = stylePrompts[style] || stylePrompts["Bold & Graphic"];
+  const selectedColor = colorSchemeDescriptions[color_scheme] || colorSchemeDescriptions["vibrant"];
+
+  // Start with user's description (most specific detail first)
+  let parts: string[] = [];
+
+  if (user_prompt && user_prompt.trim().length > 0) {
+    parts.push(user_prompt.trim());
+  } else {
+    // Derive subject from title if no custom prompt
+    parts.push(`YouTube thumbnail image for: "${title}"`);
+  }
+
+  // Append style
+  parts.push(selectedStyle);
+
+  // Append color
+  parts.push(selectedColor);
+
+  // Universal quality boosters
+  parts.push(
+    "ultra high resolution 8K",
+    "cinematic composition",
+    "professional YouTube thumbnail",
+    "16:9 aspect ratio",
+    "no text, no watermarks, no logos",
+    "highly detailed, sharp focus",
+    "award-winning photography"
+  );
+
+  // Negative guidance appended as style direction
+  parts.push(
+    "avoid blurry, avoid distorted faces, avoid extra fingers, avoid cluttered composition, avoid gibberish text"
+  );
+
+  return parts.join(", ");
 };
 
 /* ---------------- GENERATE THUMBNAIL ---------------- */
@@ -92,77 +138,107 @@ export const generateThumbnail = async (req: Request, res: Response) => {
       isGenerating: true,
     });
 
-    /* ---------------- BUILD ACCURATE SUBJECT-FIRST PROMPT ---------------- */
-    const selectedStyle = stylePrompts[style as keyof typeof stylePrompts] || stylePrompts["Bold & Graphic"];
-    const selectedColor = color_scheme ? colorSchemeDescriptions[color_scheme as keyof typeof colorSchemeDescriptions] : "";
+    /* ---------------- BUILD OPTIMIZED PROMPT ---------------- */
 
-    let fullPrompt = `${title}. `;
-    if (user_prompt && user_prompt.trim()) {
-      fullPrompt += `${user_prompt.trim()}. `;
-    }
-    fullPrompt += `${selectedStyle}, ${selectedColor}, 8k resolution, cinematic YouTube thumbnail art, ultra detailed.`;
+    const fullPrompt = buildPrompt(
+      title,
+      user_prompt,
+      style || "Bold & Graphic",
+      color_scheme || "vibrant"
+    );
 
+    console.log("🎨 Generating with prompt:", fullPrompt.substring(0, 200) + "...");
 
     let imageBuffer: Buffer | null = null;
 
-    /* ---------------- 1. FLUX AI GENERATION ENGINE ---------------- */
+    /* ---------------- 1. PRIMARY: FLUX.1-dev via Pollinations (best quality) ---------------- */
     try {
-      const fluxUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(fullPrompt)}?width=1280&height=720&model=flux&nologo=true`;
-      const aiResponse = await axios.get(fluxUrl, {
+      const seed = Math.floor(Math.random() * 9999999);
+      const fluxDevUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(fullPrompt)}?width=1280&height=720&model=flux&seed=${seed}&nologo=true&enhance=true`;
+      
+      console.log("Trying Flux (Pollinations)...");
+      const aiResponse = await axios.get(fluxDevUrl, {
         responseType: "arraybuffer",
         headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          "Accept": "image/webp,image/png,image/*,*/*",
         },
-        timeout: 30000
+        timeout: 60000,
       });
 
-      if (aiResponse.status === 200 && aiResponse.data && aiResponse.data.byteLength > 1000) {
+      if (aiResponse.status === 200 && aiResponse.data && aiResponse.data.byteLength > 5000) {
         imageBuffer = Buffer.from(aiResponse.data);
+        console.log(`✅ Flux generated image: ${imageBuffer.length} bytes`);
       }
     } catch (fluxErr: any) {
-      console.warn("Flux primary engine notice:", fluxErr.message);
+      console.warn("⚠️ Flux primary engine failed:", fluxErr.message);
     }
 
+    /* ---------------- 2. FALLBACK: Flux-Realism via Pollinations ---------------- */
+    if (!imageBuffer) {
+      try {
+        const seed2 = Math.floor(Math.random() * 9999999);
+        const fluxRealismUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(fullPrompt)}?width=1280&height=720&model=flux-realism&seed=${seed2}&nologo=true`;
+        
+        console.log("Trying Flux-Realism fallback...");
+        const fallbackResponse = await axios.get(fluxRealismUrl, {
+          responseType: "arraybuffer",
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+          },
+          timeout: 45000,
+        });
 
+        if (fallbackResponse.status === 200 && fallbackResponse.data && fallbackResponse.data.byteLength > 5000) {
+          imageBuffer = Buffer.from(fallbackResponse.data);
+          console.log(`✅ Flux-Realism fallback image: ${imageBuffer.length} bytes`);
+        }
+      } catch (fallbackErr: any) {
+        console.warn("⚠️ Flux-Realism fallback failed:", fallbackErr.message);
+      }
+    }
 
-    /* ---------------- 2. HUGGING FACE BACKUP FALLBACK ---------------- */
+    /* ---------------- 3. LAST RESORT: HuggingFace ---------------- */
     if (!imageBuffer && process.env.HF_API_KEY) {
       try {
+        console.log("Trying HuggingFace last resort...");
         const hfResponse = await axios.post(
-          "https://router.huggingface.co/hf-inference/models/prompthero/openjourney",
+          "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell",
           { inputs: fullPrompt },
           {
             headers: {
               Authorization: `Bearer ${process.env.HF_API_KEY}`,
               "Content-Type": "application/json",
-              "Accept": "image/png"
+              "Accept": "image/jpeg",
             },
             responseType: "arraybuffer",
-            timeout: 30000
+            timeout: 45000,
           }
         );
         if (hfResponse.status === 200 && hfResponse.data) {
           imageBuffer = Buffer.from(hfResponse.data);
+          console.log(`✅ HuggingFace fallback image: ${imageBuffer.length} bytes`);
         }
       } catch (hfErr: any) {
-        console.warn("HF fallback notice:", hfErr.message);
+        console.warn("⚠️ HuggingFace fallback failed:", hfErr.message);
       }
     }
 
     if (!imageBuffer) {
       thumbnail.isGenerating = false;
       await thumbnail.save();
-      return res.status(500).json({ message: "Failed to generate AI thumbnail image. Please try again." });
+      return res.status(500).json({ message: "Failed to generate AI thumbnail image. All engines failed. Please try again." });
     }
 
-    /* ---------------- 3. UPLOAD TO CLOUDINARY WITH BASE64 FALLBACK ---------------- */
+    /* ---------------- UPLOAD TO CLOUDINARY WITH FALLBACK ---------------- */
     let finalImageUrl = "";
 
     try {
       const cloudResult = await uploadBufferToCloudinary(imageBuffer);
       finalImageUrl = cloudResult.secure_url;
+      console.log("✅ Uploaded to Cloudinary:", finalImageUrl);
     } catch (cloudErr: any) {
-      console.warn("Cloudinary upload fallback to base64 data URL:", cloudErr.message);
+      console.warn("⚠️ Cloudinary upload failed, using base64:", cloudErr.message);
       finalImageUrl = `data:image/jpeg;base64,${imageBuffer.toString("base64")}`;
     }
 
@@ -180,7 +256,7 @@ export const generateThumbnail = async (req: Request, res: Response) => {
     });
 
   } catch (error: any) {
-    console.error("Thumbnail Error:", error.message);
+    console.error("❌ Thumbnail Error:", error.message);
     return res.status(500).json({
       message: error.message || "Thumbnail generation failed",
     });
