@@ -92,15 +92,16 @@ export const generateThumbnail = async (req: Request, res: Response) => {
       isGenerating: true,
     });
 
-    /* ---------------- BUILD PROMPT ---------------- */
+    /* ---------------- BUILD ACCURATE SUBJECT-FIRST PROMPT ---------------- */
     const selectedStyle = stylePrompts[style as keyof typeof stylePrompts] || stylePrompts["Bold & Graphic"];
     const selectedColor = color_scheme ? colorSchemeDescriptions[color_scheme as keyof typeof colorSchemeDescriptions] : "";
 
-    let fullPrompt = `High quality YouTube thumbnail art for topic: "${title}". `;
-    if (user_prompt) {
-      fullPrompt += `${user_prompt}. `;
+    let fullPrompt = `${title}. `;
+    if (user_prompt && user_prompt.trim()) {
+      fullPrompt += `${user_prompt.trim()}. `;
     }
-    fullPrompt += `${selectedStyle}, ${selectedColor}. Clean composition, 8k resolution, highly detailed masterpiece.`;
+    fullPrompt += `${selectedStyle}, ${selectedColor}, 8k resolution, cinematic YouTube thumbnail art, ultra detailed.`;
+
 
     let imageBuffer: Buffer | null = null;
 

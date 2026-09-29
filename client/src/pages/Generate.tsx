@@ -121,6 +121,14 @@ const Generate = () => {
   
 
 
+  const handleCreateNew = () => {
+    setTitle('');
+    setAdditionalDetails('');
+    setThumbnail(null);
+    setLoading(false);
+    navigate('/generate');
+  };
+
   return (
     <>
       <SoftBackdrop/>
@@ -128,11 +136,13 @@ const Generate = () => {
         <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-28 lg:pb-8">
           <div className="grid lg:grid-cols-[400px_1fr] gap-8">
               {/* left panel */}
-              <div className={`space-y-6 ${id && 'pointer-events-none'}`}>
+              <div className="space-y-6">
                 <div className="p-6 rounded-2xl bg-white/8 border border-white/12 shadow-xl space-y-6">
-                  <div>
-                    <h2 className="text-xl font-bold text-zinc-100 mb-1">Create Your Thumbnail</h2>
-                    <p className="text-sm text-zinc-400">Describe your vision and let AI bring it to life</p>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h2 className="text-xl font-bold text-zinc-100 mb-1">Create Your Thumbnail</h2>
+                      <p className="text-sm text-zinc-400">Describe your vision and let AI bring it to life</p>
+                    </div>
                   </div>
 
                   <div className="space-y-5">
@@ -163,14 +173,15 @@ const Generate = () => {
 
                     </div>
 
-
-
-
                   </div>
 
-                  {/* Button */}
-                  {!id && (
-                    <button onClick={handleGenerate} className="text-[15px] w-full py-3.5 rounded-xl font-medium bg-linear-to-b from-pink-500 to-pink-600 hover:from-pink-700 disabled:cursor-not-allowed transition-colors ">
+                  {/* Action Buttons */}
+                  {id ? (
+                    <button onClick={handleCreateNew} className="text-[15px] w-full py-3.5 rounded-xl font-medium bg-linear-to-b from-pink-500 to-pink-600 hover:from-pink-700 transition-colors cursor-pointer flex items-center justify-center gap-2">
+                      ✨ Create Another Thumbnail
+                    </button>
+                  ) : (
+                    <button onClick={handleGenerate} disabled={loading} className="text-[15px] w-full py-3.5 rounded-xl font-medium bg-linear-to-b from-pink-500 to-pink-600 hover:from-pink-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer">
                       {loading ? 'Generating ...' : 'Generate Thumbnail'}
                     </button>
                   )}
@@ -178,6 +189,7 @@ const Generate = () => {
 
 
               </div>
+
               {/* Right panel */}
               <div>
                 <div className="p-6 rounded-2xl bg-white/8 border border-white/10 shadow-xl">
