@@ -1,14 +1,16 @@
-import { DownloadIcon, ImageIcon, Loader2Icon } from "lucide-react";
+import { AlertCircleIcon, DownloadIcon, ImageIcon, Loader2Icon } from "lucide-react";
 import type { AspectRatio, IThumbnail } from "../assets/assets";
 
 const PreviewPanel = ({
   thumbnail,
   isLoading,
   aspectRatio,
+  generationFailed = false,
 }: {
   thumbnail: IThumbnail | null;
   isLoading: boolean;
   aspectRatio: AspectRatio;
+  generationFailed?: boolean;
 }) => {
   const aspectClasses = {
     "16:9": "aspect-video",
@@ -28,24 +30,39 @@ const PreviewPanel = ({
   return (
     <div className="relative mx-auto w-full max-w-2xl">
       <div className={`relative overflow-hidden ${aspectClasses[aspectRatio]}`}>
-        {/* Loading state */}
 
+        {/* Loading state */}
         {isLoading && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/40">
-            <Loader2Icon className="size-8 animate-spin text-zinc-400" />
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/40">
+            <Loader2Icon className="size-8 animate-spin text-pink-400" />
             <div className="text-center">
               <p className="text-sm font-medium text-zinc-200">
                 AI is creating your Thumbnail
               </p>
               <p className="mt-1 text-xs text-zinc-400">
-                This may take 10-15 seconds
+                This may take 1–2 minutes, please wait...
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Generation failed state */}
+        {!isLoading && generationFailed && (
+          <div className="absolute inset-0 m-2 flex flex-col items-center justify-center gap-4 rounded-lg border-2 border-dashed border-red-500/30 bg-red-950/20">
+            <div className="flex size-16 items-center justify-center rounded-full bg-red-500/15 border border-red-500/30">
+              <AlertCircleIcon className="size-8 text-red-400" />
+            </div>
+            <div className="px-4 text-center">
+              <p className="font-medium text-red-300">Generation Failed</p>
+              <p className="mt-1 text-xs text-zinc-400">
+                AI engines timed out. Click <span className="text-pink-400 font-medium">🔄 Regenerate</span> to try again.
               </p>
             </div>
           </div>
         )}
 
         {/* Image Preview */}
-        {!isLoading && thumbnail?.image_url && (
+        {!isLoading && !generationFailed && thumbnail?.image_url && (
           <div className="group relative h-full w-full">
             <img
               src={thumbnail?.image_url}
@@ -65,7 +82,7 @@ const PreviewPanel = ({
         )}
 
         {/* Empty State */}
-        {!isLoading && !thumbnail?.image_url && (
+        {!isLoading && !generationFailed && !thumbnail?.image_url && (
             <div className="absolute inset-0 m-2 flex flex-col items-center justify-center gap-4 rounded-lg border-2 border-dashed border-white/20 bg-black/25">
                 <div className="max-sm:hidden flex size-20 items-center justify-center rounded-full bg-white/10">
                     <ImageIcon className="size-10 text-white opacity-50"/>
@@ -74,7 +91,6 @@ const PreviewPanel = ({
                     <p className="font text-zinc-200">Generate Your First Thumbnail</p>
                     <p className="mt-1 text-xs text-zinc-400">Fill out the form and click Generate</p>
                 </div>
-
             </div>
         )}
       </div>
@@ -83,3 +99,5 @@ const PreviewPanel = ({
 };
 
 export default PreviewPanel;
+
+

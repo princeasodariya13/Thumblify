@@ -25,6 +25,7 @@ const Generate = () => {
   const [thumbnail,setThumbnail] = useState<IThumbnail | null>(null);
 
   const [loading,setLoading] = useState(false);
+  const [generationFailed, setGenerationFailed] = useState(false);
 
   const [aspectRatio,setAspectRatio] = useState<AspectRatio>('16:9')
   const [colorSchemeId,setColorSchemeId] = useState<string>(colorSchemes[0].id)
@@ -117,13 +118,20 @@ const Generate = () => {
       setAspectRatio(thumb?.aspect_ratio || "16:9")
       setStyle(thumb?.style || "Bold & Graphic")
 
-      if (thumb?.image_url && !thumb?.isGenerating) {
-        // ✅ Image is ready — stop loading
-        setLoading(false)
-      } else {
-        // ⏳ Still generating — keep loading true so polling interval keeps running
-        // This also handles the case where user navigated away and came back
+      if (thumb?.isGenerating) {
+        // ⏳ Server is still working — keep polling
         setLoading(true)
+        setGenerationFailed(false)
+      } else {
+        // ✅ Server finished (success OR fail) — always stop loading
+        setLoading(false)
+        if (!thumb?.image_url) {
+          // Generation finished but no image — all engines failed
+          setGenerationFailed(true)
+          toast.error('Image generation failed. Please try regenerating.')
+        } else {
+          setGenerationFailed(false)
+        }
       }
     } catch (error: any) {
       console.log(error)
@@ -244,7 +252,7 @@ const Generate = () => {
               <div>
                 <div className="p-6 rounded-2xl bg-white/8 border border-white/10 shadow-xl">
                   <h2 className="text-lg font-semibold text-zinc-100 mb-4">Preview</h2>
-                  <PreviewPanel thumbnail={thumbnail} isLoading={loading} aspectRatio={aspectRatio}/>
+                  <PreviewPanel thumbnail={thumbnail} isLoading={loading} aspectRatio={aspectRatio} generationFailed={generationFailed}/>
                 </div>
               </div>
           </div>
