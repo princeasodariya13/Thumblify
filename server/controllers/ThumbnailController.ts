@@ -96,47 +96,76 @@ export const generateThumbnail = async (req: Request, res: Response) => {
     const selectedStyle = stylePrompts[style as keyof typeof stylePrompts] || stylePrompts["Bold & Graphic"];
     const selectedColor = color_scheme ? colorSchemeDescriptions[color_scheme as keyof typeof colorSchemeDescriptions] : "";
 
-    let prompt = `High quality YouTube thumbnail art for the topic: "${title}". `;
-    
+    let fullPrompt = `High quality YouTube thumbnail art for topic: "${title}". `;
     if (user_prompt) {
-      prompt += `${user_prompt}. `;
+      fullPrompt += `${user_prompt}. `;
+    }
+    fullPrompt += `${selectedStyle}, ${selectedColor}. Clean composition, 8k resolution, highly detailed masterpiece.`;
+
+    let imageBuffer: Buffer | null = null;
+
+    /* ---------------- 1. TRY HIGH-SPEED FLUX AI GENERATION ENGINE ---------------- */
+    try {
+      const fluxUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(fullPrompt)}?width=1280&height=720&model=flux&nologo=true`;
+      const aiResponse = await axios.get(fluxUrl, {
+        responseType: "arraybuffer",
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        },
+        timeout: 30000
+      });
+
+      if (aiResponse.status === 200 && aiResponse.data && aiResponse.data.byteLength > 1000) {
+        imageBuffer = Buffer.from(aiResponse.data);
+      }
+    } catch (fluxErr: any) {
+      console.warn("Flux primary engine notice:", fluxErr.message);
     }
 
-    prompt += `${selectedStyle}, ${selectedColor}. `;
-    prompt += `Clean composition, ample negative space for text overlays, masterpiece, 8k resolution, highly detailed.`;
-
-    /* ---------------- HUGGING FACE API CALL ---------------- */
-
-    const hfResponse = await axios.post(
-      "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell",
-      { inputs: prompt },
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.HF_API_KEY}`,
-          "Content-Type": "application/json",
-          "Accept": "image/png"
-        },
-        responseType: "arraybuffer",
+    /* ---------------- 2. HUGGING FACE BACKUP FALLBACK ---------------- */
+    if (!imageBuffer && process.env.HF_API_KEY) {
+      try {
+        const hfResponse = await axios.post(
+          "https://router.huggingface.co/hf-inference/models/prompthero/openjourney",
+          { inputs: fullPrompt },
+          {
+            headers: {
+              Authorization: `Bearer ${process.env.HF_API_KEY}`,
+              "Content-Type": "application/json",
+              "Accept": "image/png"
+            },
+            responseType: "arraybuffer",
+            timeout: 30000
+          }
+        );
+        if (hfResponse.status === 200 && hfResponse.data) {
+          imageBuffer = Buffer.from(hfResponse.data);
+        }
+      } catch (hfErr: any) {
+        console.warn("HF fallback notice:", hfErr.message);
       }
-    );
+    }
 
-    /* ---------------- HANDLE HF ERRORS ---------------- */
-
-    if (hfResponse.headers["content-type"]?.includes("application/json")) {
-      const errorText = Buffer.from(hfResponse.data).toString("utf-8");
+    if (!imageBuffer) {
       thumbnail.isGenerating = false;
       await thumbnail.save();
-      throw new Error(`AI Generation Service Error: ${errorText}`);
+      return res.status(500).json({ message: "Failed to generate AI thumbnail image. Please try again." });
     }
 
-    /* ---------------- CONVERT IMAGE BUFFER & UPLOAD DIRECTLY ---------------- */
+    /* ---------------- 3. UPLOAD TO CLOUDINARY WITH BASE64 FALLBACK ---------------- */
+    let finalImageUrl = "";
 
-    const finalBuffer = Buffer.from(hfResponse.data);
-    const uploadResult = await uploadBufferToCloudinary(finalBuffer);
+    try {
+      const cloudResult = await uploadBufferToCloudinary(imageBuffer);
+      finalImageUrl = cloudResult.secure_url;
+    } catch (cloudErr: any) {
+      console.warn("Cloudinary upload fallback to base64 data URL:", cloudErr.message);
+      finalImageUrl = `data:image/jpeg;base64,${imageBuffer.toString("base64")}`;
+    }
 
     /* ---------------- UPDATE DB ---------------- */
 
-    thumbnail.image_url = uploadResult.secure_url;
+    thumbnail.image_url = finalImageUrl;
     thumbnail.isGenerating = false;
     await thumbnail.save();
 
@@ -146,21 +175,11 @@ export const generateThumbnail = async (req: Request, res: Response) => {
       message: "Thumbnail generated successfully",
       thumbnail,
     });
+
   } catch (error: any) {
     console.error("Thumbnail Error:", error.message);
-    let detailedError = error.message;
-    if (error.response && error.response.data) {
-      try {
-        const errorData = Buffer.from(error.response.data).toString('utf-8');
-        console.error("HF API Error detail:", errorData);
-        detailedError = errorData;
-      } catch (e) {
-        console.error("HF API Error data buffer parse failed.");
-      }
-    }
-
     return res.status(500).json({
-      message: detailedError || "Thumbnail generation failed",
+      message: error.message || "Thumbnail generation failed",
     });
   }
 };
