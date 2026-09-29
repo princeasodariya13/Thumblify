@@ -27,6 +27,12 @@ await connectDB();
 
 const app = express();
 
+// Trust reverse proxy (e.g. Render / Heroku / Vercel) for HTTPS cookie session handling
+if (process.env.NODE_ENV === 'production') {
+    app.set('trust proxy', 1);
+}
+
+
 
 
 // Middleware
