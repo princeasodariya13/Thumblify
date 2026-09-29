@@ -56,7 +56,11 @@ const uploadBufferToCloudinary = (buffer: Buffer): Promise<{ secure_url: string 
   });
 };
 
-/* ---------------- BUILD OPTIMIZED PROMPT (capped at 450 chars) ---------------- */
+/* ---------------- BUILD OPTIMIZED PROMPT ---------------- */
+
+// Words that describe quality/style but are NOT visual subjects
+// Strip these from the subject so AI focuses on what to actually draw
+const META_WORDS = /\b(make it|8k|4k|hd|ultra|high quality|natural|perfect|beautiful|amazing|best|generate|create|render|realistic|photo|image|thumbnail)\b/gi;
 
 const buildPrompt = (
   title: string,
@@ -67,15 +71,39 @@ const buildPrompt = (
   const selectedStyle = stylePrompts[style] || stylePrompts["Bold & Graphic"];
   const selectedColor = colorSchemeDescriptions[color_scheme] || colorSchemeDescriptions["vibrant"];
 
-  const subject =
-    user_prompt && user_prompt.trim().length > 0
-      ? user_prompt.trim().substring(0, 250)
-      : `YouTube thumbnail: ${title}`;
+  // Title is ALWAYS the primary visual subject — never omit it
+  const cleanTitle = title.trim();
 
-  const prompt = `${subject}, ${selectedStyle}, ${selectedColor}, 8K ultra detailed, cinematic composition, no text no watermarks no logos, sharp focus`;
+  // Extract only visual details from the description (strip meta-instructions)
+  let visualDetails = "";
+  if (user_prompt && user_prompt.trim().length > 0) {
+    const cleaned = user_prompt.trim().replace(META_WORDS, "").replace(/\s{2,}/g, " ").trim();
+    // Only use description if it still has meaningful visual content after cleaning
+    if (cleaned.length > 4) {
+      visualDetails = cleaned;
+    }
+  }
 
-  return prompt.substring(0, 450);
+  // Build subject: title first, then visual details from description
+  const subject = visualDetails
+    ? `${cleanTitle}, ${visualDetails}`
+    : cleanTitle;
+
+  // Full prompt: subject → style → color → universal quality boosters
+  const prompt = [
+    subject,
+    selectedStyle,
+    selectedColor,
+    "photorealistic 8K resolution",
+    "cinematic wide composition",
+    "professional YouTube thumbnail style",
+    "no text, no watermarks, no logos",
+    "sharp focus, highly detailed",
+  ].join(", ");
+
+  return prompt;
 };
+
 
 /* ---------------- ASYNC BACKGROUND GENERATION ---------------- */
 
