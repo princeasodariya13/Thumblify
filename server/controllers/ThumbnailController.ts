@@ -1,9 +1,12 @@
 import { Request, Response } from "express";
 import Thumbnail from "../models/Thumbnail.js";
-import path from "path";
-import fs from "fs";
 import axios from "axios";
 import { v2 as cloudinary } from "cloudinary";
+
+// Ensure Cloudinary is initialized from environment variables
+if (process.env.CLOUDINARY_URL) {
+  cloudinary.config();
+}
 
 /* ---------------- STYLE PROMPTS ---------------- */
 
@@ -37,15 +40,30 @@ const colorSchemeDescriptions = {
   pastel: "soft muted pastel tones, light baby blue, pale pink, mint green, dreamy and calm washed-out aesthetic",
 };
 
+// Helper: Upload image buffer directly to Cloudinary without writing to disk
+const uploadBufferToCloudinary = (buffer: Buffer): Promise<{ secure_url: string }> => {
+  return new Promise((resolve, reject) => {
+    const uploadStream = cloudinary.uploader.upload_stream(
+      { resource_type: "image", folder: "thumblify" },
+      (error, result) => {
+        if (error || !result) {
+          return reject(error || new Error("Cloudinary upload failed"));
+        }
+        resolve(result);
+      }
+    );
+    uploadStream.end(buffer);
+  });
+};
+
 /* ---------------- GENERATE THUMBNAIL ---------------- */
 
 export const generateThumbnail = async (req: Request, res: Response) => {
   try {
     const { userId } = req.session;
 
-    // ⚠️ FIX: if not logged in
     if (!userId) {
-      return res.status(401).json({ message: "User not logged in" });
+      return res.status(401).json({ message: "User not logged in. Please sign in to generate thumbnails." });
     }
 
     const {
@@ -57,16 +75,20 @@ export const generateThumbnail = async (req: Request, res: Response) => {
       text_overlay,
     } = req.body;
 
-    /* ---------------- SAVE TO DB ---------------- */
+    if (!title) {
+      return res.status(400).json({ message: "Thumbnail title is required." });
+    }
+
+    /* ---------------- SAVE DRAFT TO DB ---------------- */
 
     const thumbnail = await Thumbnail.create({
       userId,
       title,
       prompt_used: user_prompt,
-      style,
-      aspect_ratio,
-      color_scheme,
-      text_overlay,
+      style: style || "Bold & Graphic",
+      aspect_ratio: aspect_ratio || "16:9",
+      color_scheme: color_scheme || "vibrant",
+      text_overlay: !!text_overlay,
       isGenerating: true,
     });
 
@@ -102,57 +124,43 @@ export const generateThumbnail = async (req: Request, res: Response) => {
 
     if (hfResponse.headers["content-type"]?.includes("application/json")) {
       const errorText = Buffer.from(hfResponse.data).toString("utf-8");
-      throw new Error(errorText);
+      thumbnail.isGenerating = false;
+      await thumbnail.save();
+      throw new Error(`AI Generation Service Error: ${errorText}`);
     }
 
-    /* ---------------- CONVERT IMAGE BUFFER ---------------- */
+    /* ---------------- CONVERT IMAGE BUFFER & UPLOAD DIRECTLY ---------------- */
 
     const finalBuffer = Buffer.from(hfResponse.data);
-
-    /* ---------------- SAVE FILE LOCALLY ---------------- */
-
-    const filename = `thumbnail-${Date.now()}.png`;
-    const filePath = path.join("images", filename);
-
-    fs.mkdirSync("images", { recursive: true });
-    fs.writeFileSync(filePath, finalBuffer);
-
-    /* ---------------- UPLOAD TO CLOUDINARY ---------------- */
-
-    const uploadResult = await cloudinary.uploader.upload(filePath, {
-      resource_type: "image",
-    });
+    const uploadResult = await uploadBufferToCloudinary(finalBuffer);
 
     /* ---------------- UPDATE DB ---------------- */
 
     thumbnail.image_url = uploadResult.secure_url;
     thumbnail.isGenerating = false;
-    // Keep it private by default unless otherwise specified, but schema defaults to false.
     await thumbnail.save();
-
-    /* ---------------- DELETE LOCAL FILE ---------------- */
-
-    fs.unlinkSync(filePath);
 
     /* ---------------- RESPONSE ---------------- */
 
-    res.json({
+    return res.json({
       message: "Thumbnail generated successfully",
       thumbnail,
     });
   } catch (error: any) {
     console.error("Thumbnail Error:", error.message);
+    let detailedError = error.message;
     if (error.response && error.response.data) {
       try {
         const errorData = Buffer.from(error.response.data).toString('utf-8');
-        console.error("HF API Error:", errorData);
+        console.error("HF API Error detail:", errorData);
+        detailedError = errorData;
       } catch (e) {
         console.error("HF API Error data buffer parse failed.");
       }
     }
 
-    res.status(500).json({
-      message: error.message || "Thumbnail generation failed",
+    return res.status(500).json({
+      message: detailedError || "Thumbnail generation failed",
     });
   }
 };
@@ -164,11 +172,15 @@ export const deleteThumbnail = async (req: Request, res: Response) => {
     const { id } = req.params;
     const { userId } = req.session;
 
+    if (!userId) {
+      return res.status(401).json({ message: "User not logged in" });
+    }
+
     await Thumbnail.findOneAndDelete({ _id: id, userId });
 
-    res.json({ message: "Thumbnail deleted successfully" });
+    return res.json({ message: "Thumbnail deleted successfully" });
   } catch (error: any) {
-    res.status(500).json({ message: error.message });
+    return res.status(500).json({ message: error.message });
   }
 };
 
@@ -191,12 +203,12 @@ export const togglePublicStatus = async (req: Request, res: Response) => {
     thumbnail.isPublic = !thumbnail.isPublic;
     await thumbnail.save();
 
-    res.json({ 
+    return res.json({ 
       message: thumbnail.isPublic ? "Thumbnail is now public" : "Thumbnail is now private",
       isPublic: thumbnail.isPublic
     });
   } catch (error: any) {
-    res.status(500).json({ message: error.message });
+    return res.status(500).json({ message: error.message });
   }
 };
 
@@ -204,14 +216,13 @@ export const togglePublicStatus = async (req: Request, res: Response) => {
 
 export const getCommunityThumbnails = async (req: Request, res: Response) => {
   try {
-    // Fetch all thumbnails that are public, highest rated or newest first
     const thumbnails = await Thumbnail.find({ isPublic: true })
       .sort({ createdAt: -1 })
-      .populate('userId', 'name') // Assuming User model has a name field to show who made it
+      .populate('userId', 'name')
       .limit(50);
 
-    res.json({ thumbnails });
+    return res.json({ thumbnails });
   } catch (error: any) {
-    res.status(500).json({ message: error.message });
+    return res.status(500).json({ message: error.message });
   }
 };
