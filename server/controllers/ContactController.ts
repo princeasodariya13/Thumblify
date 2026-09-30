@@ -23,19 +23,23 @@ export const sendContactEmail = async (req: Request, res: Response) => {
     if (emailUser && emailPass) {
       try {
         const transporter = nodemailer.createTransport({
-          service: "gmail",
+          host: "smtp.gmail.com",
+          port: 465,
+          secure: true,
           auth: {
             user: emailUser,
             pass: emailPass,
           },
+          connectionTimeout: 10000,
         });
 
-        // 1. Send admin notification email
-        await transporter.sendMail({
-          from: `"Thumblify Contact" <${emailUser}>`,
+        // 1. Send admin notification email (background async)
+        transporter.sendMail({
+          from: emailUser,
           to: emailUser,
           replyTo: email,
           subject: `📩 New Contact Message from ${name}`,
+          text: `New message from ${name} (${email}):\n\n${message}`,
           html: `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 24px; background: #0f172a; border-radius: 12px; color: #f8fafc;">
               <h2 style="color: #ec4899; margin-top: 0;">New Contact Form Submission</h2>
@@ -48,13 +52,18 @@ export const sendContactEmail = async (req: Request, res: Response) => {
               <footer style="margin-top: 24px; color: #64748b; font-size: 12px;">Sent via Thumblify AI Thumbnail Generator</footer>
             </div>
           `,
+        }).then((info) => {
+          console.log(`✅ Admin email sent! Message ID: ${info.messageId}`);
+        }).catch((err) => {
+          console.error(`❌ Admin email error: ${err.message}`);
         });
 
-        // 2. Send user auto-reply email (non-blocking)
+        // 2. Send user auto-reply email (background async)
         transporter.sendMail({
-          from: `"Thumblify Team" <${emailUser}>`,
+          from: emailUser,
           to: email,
           subject: "✨ Thanks for reaching out to Thumblify!",
+          text: `Hi ${name},\n\nThank you for reaching out to Thumblify! We've received your message:\n"${message}"\n\nBest regards,\nThe Thumblify Team`,
           html: `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 24px; background: #0f172a; border-radius: 12px; color: #f8fafc;">
               <h2 style="color: #ec4899; margin-top: 0;">Hi ${name},</h2>
@@ -66,15 +75,20 @@ export const sendContactEmail = async (req: Request, res: Response) => {
               <p style="color: #cbd5e1;">Best regards,<br/><strong>The Thumblify Team</strong></p>
             </div>
           `,
-        }).catch((err) => console.warn("⚠️ Auto-reply warning:", err.message));
+        }).then((info) => {
+          console.log(`✅ User auto-reply sent! Message ID: ${info.messageId}`);
+        }).catch((err) => {
+          console.warn(`⚠️ User auto-reply warning: ${err.message}`);
+        });
 
       } catch (mailErr: any) {
-        console.warn("⚠️ Nodemailer transport error:", mailErr.message);
+        console.warn("⚠️ Nodemailer transport setup error:", mailErr.message);
       }
     } else {
       console.warn("⚠️ EMAIL or EMAIL_PASS environment variables not set in server environment.");
     }
 
+    // Return INSTANT 200 OK response to frontend
     return res.status(200).json({ success: true, message: "Message sent successfully!" });
 
   } catch (error: any) {
