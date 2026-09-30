@@ -19,7 +19,7 @@ export const sendContactEmail = async (req: Request, res: Response) => {
     const trimmedEmail = email.trim();
     const trimmedMessage = message.trim();
 
-    console.log(`📩 Contact submission received: ${trimmedName} (${trimmedEmail})`);
+    console.log(`📩 Contact form submission from user: ${trimmedName} <${trimmedEmail}>`);
 
     const emailUser = process.env.EMAIL;
     const emailPass = process.env.EMAIL_PASS;
@@ -34,34 +34,37 @@ export const sendContactEmail = async (req: Request, res: Response) => {
           },
         });
 
-        // 1. Admin Email Options (Notification to site owner)
+        // 1. Admin Email Options (Unique subject ensures a NEW separate inbox email per user)
         const adminMailOptions = {
-          from: emailUser,
+          from: `"Thumblify Form" <${emailUser}>`,
           to: emailUser,
           replyTo: trimmedEmail,
-          subject: `📩 [Thumblify] New Message from ${trimmedName}`,
-          text: `You received a new contact message from ${trimmedName} (${trimmedEmail}):\n\n"${trimmedMessage}"`,
+          subject: `📩 New Contact: ${trimmedName} (${trimmedEmail})`,
+          text: `You received a new message from ${trimmedName} (${trimmedEmail}):\n\n"${trimmedMessage}"`,
           html: `
-            <div style="font-family: Arial, sans-serif; max-width: 580px; margin: auto; padding: 24px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; color: #0f172a;">
-              <h2 style="color: #db2777; margin-top: 0;">📩 New Contact Message</h2>
-              <p style="color: #475569; font-size: 14px;">You received a new inquiry from your website contact form.</p>
-              <div style="padding: 16px; background: #f8fafc; border-left: 4px solid #db2777; border-radius: 6px; margin: 16px 0;">
-                <p style="margin: 0 0 8px 0;"><strong>Sender Name:</strong> ${trimmedName}</p>
-                <p style="margin: 0 0 8px 0;"><strong>Sender Email:</strong> <a href="mailto:${trimmedEmail}" style="color: #db2777;">${trimmedEmail}</a></p>
-                <p style="margin: 12px 0 0 0; white-space: pre-wrap; color: #1e293b;">${trimmedMessage}</p>
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 24px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; color: #0f172a;">
+              <div style="background: #db2777; padding: 16px; border-radius: 8px 8px 0 0; text-align: center;">
+                <h2 style="color: #ffffff; margin: 0; font-size: 20px;">📩 New Thumblify Website Message</h2>
               </div>
-              <p style="font-size: 12px; color: #94a3b8;">Tip: Simply click "Reply" in your email client to respond directly to ${trimmedName} (${trimmedEmail}).</p>
+              <div style="padding: 20px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 0 0 8px 8px;">
+                <p style="margin: 0 0 10px 0; font-size: 15px;"><strong>Sender Name:</strong> ${trimmedName}</p>
+                <p style="margin: 0 0 10px 0; font-size: 15px;"><strong>Sender Email:</strong> <a href="mailto:${trimmedEmail}" style="color: #db2777; font-weight: bold;">${trimmedEmail}</a></p>
+                <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 16px 0;" />
+                <p style="margin: 0 0 8px 0; font-size: 14px; color: #64748b;"><strong>Message Content:</strong></p>
+                <div style="padding: 14px; background: #ffffff; border-left: 4px solid #db2777; border-radius: 4px; font-size: 15px; line-height: 1.6; color: #1e293b; white-space: pre-wrap;">${trimmedMessage}</div>
+                <p style="font-size: 12px; color: #94a3b8; margin-top: 20px; text-align: center;">💡 Tip: Click "Reply" in your email app to reply directly to ${trimmedName} (${trimmedEmail}).</p>
+              </div>
             </div>
           `,
         };
 
         const adminInfo = await transporter.sendMail(adminMailOptions);
-        console.log(`✅ Owner notification email delivered to ${emailUser}! Message ID: ${adminInfo.messageId}`);
+        console.log(`✅ Admin notification email delivered to owner mailbox! Message ID: ${adminInfo.messageId}`);
 
-        // 2. User Auto-Reply
+        // 2. User Auto-Reply Confirmation
         try {
           const userMailOptions = {
-            from: emailUser,
+            from: `"Thumblify Support" <${emailUser}>`,
             to: trimmedEmail,
             subject: "✨ Thanks for reaching out to Thumblify!",
             text: `Hi ${trimmedName},\n\nThank you for reaching out to Thumblify! We've received your message:\n"${trimmedMessage}"\n\nBest regards,\nThe Thumblify Team`,
@@ -87,7 +90,7 @@ export const sendContactEmail = async (req: Request, res: Response) => {
         console.error("❌ Admin mailer error:", mailErr.message);
       }
     } else {
-      console.warn("⚠️ EMAIL or EMAIL_PASS not set.");
+      console.warn("⚠️ EMAIL or EMAIL_PASS environment variables not set.");
     }
 
     return res.status(200).json({
@@ -96,7 +99,7 @@ export const sendContactEmail = async (req: Request, res: Response) => {
     });
 
   } catch (error: any) {
-    console.error("❌ sendContactEmail controller error:", error);
+    console.error("❌ sendContactEmail error:", error);
     return res.status(200).json({
       success: true,
       message: "Message sent successfully!",
