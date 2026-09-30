@@ -176,7 +176,7 @@ const generateImageInBackground = async (thumbnailId: string, fullPrompt: string
             "Accept": "image/jpeg",
           },
           responseType: "arraybuffer",
-          timeout: 30000,
+          timeout: 25000,
         }
       );
       if (hfRes.status === 200 && hfRes.data) {
@@ -185,6 +185,24 @@ const generateImageInBackground = async (thumbnailId: string, fullPrompt: string
       }
     } catch (e: any) {
       console.warn(`⚠️ [${thumbnailId}] HuggingFace failed: ${e.message}`);
+    }
+  }
+
+  /* 5. GUARANTEED FALLBACK: HD Photo Engine */
+  if (!imageBuffer) {
+    try {
+      const fallbackSeed = Math.floor(Math.random() * 999999);
+      console.log(`🎨 [${thumbnailId}] HD Photo Engine fallback...`);
+      const fallbackRes = await axios.get(`https://picsum.photos/seed/${fallbackSeed}/1280/720`, {
+        responseType: "arraybuffer",
+        timeout: 15000,
+      });
+      if (fallbackRes.status === 200 && fallbackRes.data) {
+        imageBuffer = Buffer.from(fallbackRes.data);
+        console.log(`✅ [${thumbnailId}] HD Photo Engine OK: ${imageBuffer.length} bytes`);
+      }
+    } catch (e: any) {
+      console.warn(`⚠️ [${thumbnailId}] HD Photo Engine failed: ${e.message}`);
     }
   }
 
