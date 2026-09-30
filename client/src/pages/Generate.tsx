@@ -40,6 +40,7 @@ const Generate = () => {
       if(!isLoggedIn) return toast.error('Please Login to generate thumbnails')
       if(!title.trim()) return toast.error('Title is required')
       setLoading(true)
+      setGenerationFailed(false)
       
       try {
         const api_payload = {
@@ -53,11 +54,13 @@ const Generate = () => {
 
         const {data} = await api.post(`/api/thumbnail/generate`,api_payload)
         if(data.thumbnail){
+          setThumbnail(data.thumbnail)
           navigate('/generate/' + data.thumbnail._id)
           toast.success(data.message)
         }
       } catch (error: any) {
         setLoading(false);
+        setGenerationFailed(true);
         const msg = error?.response?.data?.message || error?.message || "Failed to generate thumbnail";
         toast.error(msg);
       }
@@ -68,6 +71,7 @@ const Generate = () => {
       if(!id) return;
       if(!title.trim()) return toast.error('Title is required')
       setLoading(true);
+      setGenerationFailed(false);
       setThumbnail(prev => prev ? { ...prev, isGenerating: true, image_url: '' } : prev);
 
       try {
@@ -81,11 +85,12 @@ const Generate = () => {
 
         const {data} = await api.post(`/api/thumbnail/regenerate/${id}`, api_payload)
         if(data.thumbnail){
+          setThumbnail(data.thumbnail);
           toast.success('Regenerating your thumbnail...')
-          // Stay on same page — polling interval will pick up the new image
         }
       } catch (error: any) {
         setLoading(false);
+        setGenerationFailed(true);
         const msg = error?.response?.data?.message || error?.message || "Failed to regenerate thumbnail";
         toast.error(msg);
       }
@@ -107,9 +112,12 @@ const Generate = () => {
 
 
   const fetchThumbnail = async () => {
+    if (!id) return;
     try {
       const { data } = await api.get(`/api/user/thumbnails/${id}`)
       const thumb = data?.thumbnail as IThumbnail
+
+      if (!thumb) return;
 
       setThumbnail(thumb)
       setAdditionalDetails(thumb?.prompt_used || "")
@@ -128,14 +136,12 @@ const Generate = () => {
         if (!thumb?.image_url) {
           // Generation finished but no image — all engines failed
           setGenerationFailed(true)
-          toast.error('Image generation failed. Please try regenerating.')
         } else {
           setGenerationFailed(false)
         }
       }
     } catch (error: any) {
       console.log(error)
-      toast.error(error?.response?.data?.message || error.message)
       setLoading(false)
     }
   }

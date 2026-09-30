@@ -61,6 +61,7 @@ const uploadBufferToCloudinary = (buffer: Buffer): Promise<{ secure_url: string 
 // Words that describe quality/style but are NOT visual subjects
 // Strip these from the subject so AI focuses on what to actually draw
 const META_WORDS = /\b(make it|8k|4k|hd|ultra|high quality|natural|perfect|beautiful|amazing|best|generate|create|render|realistic|photo|image|thumbnail)\b/gi;
+const CONJUNCTIONS = /\b(and|or|with|in|a|the|of|for)\b/gi;
 
 const buildPrompt = (
   title: string,
@@ -78,8 +79,8 @@ const buildPrompt = (
   let visualDetails = "";
   if (user_prompt && user_prompt.trim().length > 0) {
     const cleaned = user_prompt.trim().replace(META_WORDS, "").replace(/\s{2,}/g, " ").trim();
-    // Only use description if it still has meaningful visual content after cleaning
-    if (cleaned.length > 4) {
+    const meaningful = cleaned.replace(CONJUNCTIONS, "").replace(/\s{2,}/g, " ").trim();
+    if (meaningful.length > 2) {
       visualDetails = cleaned;
     }
   }
@@ -120,8 +121,8 @@ const generateImageInBackground = async (thumbnailId: string, fullPrompt: string
     const seed = Math.floor(Math.random() * 9999999);
     const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(fullPrompt)}?width=1280&height=720&model=flux&seed=${seed}&nologo=true`;
     console.log(`🎨 [${thumbnailId}] Pollinations flux...`);
-    const res = await axios.get(url, { responseType: "arraybuffer", headers: commonHeaders, timeout: 90000 });
-    if (res.status === 200 && res.data?.byteLength > 5000) {
+    const res = await axios.get(url, { responseType: "arraybuffer", headers: commonHeaders, timeout: 25000 });
+    if (res.status === 200 && res.data && (res.data.byteLength > 5000 || (Buffer.isBuffer(res.data) && res.data.length > 5000))) {
       imageBuffer = Buffer.from(res.data);
       console.log(`✅ [${thumbnailId}] flux OK: ${imageBuffer.length} bytes`);
     }
@@ -135,8 +136,8 @@ const generateImageInBackground = async (thumbnailId: string, fullPrompt: string
       const seed2 = Math.floor(Math.random() * 9999999);
       const url2 = `https://image.pollinations.ai/prompt/${encodeURIComponent(fullPrompt)}?width=1280&height=720&model=turbo&seed=${seed2}&nologo=true`;
       console.log(`🎨 [${thumbnailId}] Pollinations turbo...`);
-      const res2 = await axios.get(url2, { responseType: "arraybuffer", headers: commonHeaders, timeout: 60000 });
-      if (res2.status === 200 && res2.data?.byteLength > 5000) {
+      const res2 = await axios.get(url2, { responseType: "arraybuffer", headers: commonHeaders, timeout: 20000 });
+      if (res2.status === 200 && res2.data && (res2.data.byteLength > 5000 || (Buffer.isBuffer(res2.data) && res2.data.length > 5000))) {
         imageBuffer = Buffer.from(res2.data);
         console.log(`✅ [${thumbnailId}] turbo OK: ${imageBuffer.length} bytes`);
       }
@@ -145,7 +146,23 @@ const generateImageInBackground = async (thumbnailId: string, fullPrompt: string
     }
   }
 
-  /* 3. LAST RESORT: HuggingFace FLUX.1-schnell */
+  /* 3. FALLBACK: Pollinations default (no model specified) */
+  if (!imageBuffer) {
+    try {
+      const seed3 = Math.floor(Math.random() * 9999999);
+      const url3 = `https://image.pollinations.ai/prompt/${encodeURIComponent(fullPrompt)}?width=1280&height=720&seed=${seed3}&nologo=true`;
+      console.log(`🎨 [${thumbnailId}] Pollinations default model...`);
+      const res3 = await axios.get(url3, { responseType: "arraybuffer", headers: commonHeaders, timeout: 20000 });
+      if (res3.status === 200 && res3.data && (res3.data.byteLength > 5000 || (Buffer.isBuffer(res3.data) && res3.data.length > 5000))) {
+        imageBuffer = Buffer.from(res3.data);
+        console.log(`✅ [${thumbnailId}] default model OK: ${imageBuffer.length} bytes`);
+      }
+    } catch (e: any) {
+      console.warn(`⚠️ [${thumbnailId}] default model failed: ${e.message}`);
+    }
+  }
+
+  /* 4. LAST RESORT: HuggingFace FLUX.1-schnell */
   if (!imageBuffer && process.env.HF_API_KEY) {
     try {
       console.log(`🎨 [${thumbnailId}] HuggingFace FLUX.1-schnell...`);
@@ -159,7 +176,7 @@ const generateImageInBackground = async (thumbnailId: string, fullPrompt: string
             "Accept": "image/jpeg",
           },
           responseType: "arraybuffer",
-          timeout: 60000,
+          timeout: 30000,
         }
       );
       if (hfRes.status === 200 && hfRes.data) {
