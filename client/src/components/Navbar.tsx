@@ -1,16 +1,18 @@
-import { MenuIcon, XIcon } from "lucide-react";
+import { MenuIcon, MoonIcon, SunIcon, XIcon } from "lucide-react";
 import { useState } from "react";
 import { motion } from "motion/react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { useTheme } from "../context/ThemeContext";
 
 
 export default function Navbar() {
 
-
   const {isLoggedIn, user, logout} = useAuth()
+  const {theme, toggleTheme} = useTheme();
   const [isOpen, setIsOpen] = useState(false);
   const navigate = useNavigate();
+
   return (
     <>
       <motion.nav
@@ -59,7 +61,21 @@ export default function Navbar() {
           </Link>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
+          {/* Theme Toggle Button */}
+          <button
+            onClick={toggleTheme}
+            aria-label="Toggle theme"
+            className="p-2 rounded-full border border-white/10 bg-white/10 hover:bg-white/20 transition-all text-zinc-100 flex items-center justify-center cursor-pointer shadow-sm active:scale-90"
+            title={theme === "dark" ? "Switch to Light Mode" : "Switch to Dark Mode"}
+          >
+            {theme === "dark" ? (
+              <SunIcon className="size-4.5 text-amber-300 transition-transform duration-300 hover:rotate-45" />
+            ) : (
+              <MoonIcon className="size-4.5 text-pink-600 transition-transform duration-300 hover:-rotate-12" />
+            )}
+          </button>
+
           {
             isLoggedIn ? (
               <div className="relative group">
@@ -75,11 +91,11 @@ export default function Navbar() {
 
           ) : (
             <button
-  onClick={() => navigate('/login')}
-  className="hidden md:block px-6 py-2.5 bg-pink-600 hover:bg-pink-700 active:scale-95 transition-all rounded-full"
->
-  Get Started
-</button>
+              onClick={() => navigate('/login')}
+              className="hidden md:block px-6 py-2.5 bg-pink-600 hover:bg-pink-700 active:scale-95 transition-all rounded-full text-white"
+            >
+              Get Started
+            </button>
             
           )}
          <button onClick={() => setIsOpen(true)} className="md:hidden">
@@ -120,6 +136,24 @@ export default function Navbar() {
         <Link  onClick={() => setIsOpen(false)} to="/login">Login</Link>
 
         }
+        
+        <button
+          onClick={toggleTheme}
+          className="flex items-center gap-2 px-5 py-2 rounded-full border border-white/10 bg-white/10 text-base font-medium"
+        >
+          {theme === "dark" ? (
+            <>
+              <SunIcon className="size-5 text-amber-300" />
+              <span>Light Mode</span>
+            </>
+          ) : (
+            <>
+              <MoonIcon className="size-5 text-pink-600" />
+              <span>Dark Mode</span>
+            </>
+          )}
+        </button>
+
         <button
           onClick={() => setIsOpen(false)}
           className="active:ring-3 active:ring-white aspect-square size-10 p-1 items-center justify-center bg-pink-600 hover:bg-pink-700 transition text-white rounded-md flex"
