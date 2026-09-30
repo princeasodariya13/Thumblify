@@ -158,6 +158,12 @@ html.light .text-slate-500 {
     color: #475569 !important;
 }
 
+/* Navbar & Footer Logo visibility in Light Mode */
+html.light nav img[alt="logo"],
+html.light footer img[alt="footer logo"] {
+    filter: brightness(0) !important;
+}
+
 /* Navbar */
 html.light nav {
     background-color: rgba(255, 255, 255, 0.85) !important;
