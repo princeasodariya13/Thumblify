@@ -23,49 +23,42 @@ export const sendContactEmail = async (req: Request, res: Response) => {
     if (emailUser && emailPass) {
       try {
         const transporter = nodemailer.createTransport({
-          host: "smtp.gmail.com",
-          port: 465,
-          secure: true,
+          service: "gmail",
           auth: {
             user: emailUser,
             pass: emailPass,
           },
-          connectionTimeout: 10000,
         });
 
-        // 1. Send admin notification email (background async)
-        transporter.sendMail({
-          from: emailUser,
+        // 1. Send Admin Notification Email
+        const sendAdminPromise = transporter.sendMail({
+          from: `"Thumblify Contact" <${emailUser}>`,
           to: emailUser,
           replyTo: email,
-          subject: `📩 New Contact Message from ${name}`,
-          text: `New message from ${name} (${email}):\n\n${message}`,
+          subject: `📩 [Thumblify] New Contact Message from ${name}`,
+          text: `You received a message from ${name} (${email}):\n\n"${message}"`,
           html: `
-            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 24px; background: #0f172a; border-radius: 12px; color: #f8fafc;">
-              <h2 style="color: #ec4899; margin-top: 0;">New Contact Form Submission</h2>
-              <hr style="border: 0; border-top: 1px solid #334155; margin: 16px 0;" />
-              <p style="margin: 8px 0; color: #94a3b8;"><strong>From:</strong> <span style="color: #f8fafc;">${name}</span></p>
-              <p style="margin: 8px 0; color: #94a3b8;"><strong>Email:</strong> <a href="mailto:${email}" style="color: #ec4899;">${email}</a></p>
-              <div style="margin-top: 20px; padding: 16px; background: #1e293b; border-radius: 8px; border-left: 4px solid #ec4899;">
-                <p style="margin: 0; white-space: pre-wrap; color: #f1f5f9; line-height: 1.6;">${message}</p>
+            <div style="font-family: Arial, sans-serif; max-width: 580px; margin: auto; padding: 24px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; color: #0f172a;">
+              <h2 style="color: #db2777; margin-top: 0;">📩 New Contact Message</h2>
+              <p style="color: #475569; font-size: 14px;">You received a new inquiry from your website contact form.</p>
+              <div style="padding: 16px; background: #f8fafc; border-left: 4px solid #db2777; border-radius: 6px; margin: 16px 0;">
+                <p style="margin: 0 0 8px 0;"><strong>Sender:</strong> ${name}</p>
+                <p style="margin: 0 0 8px 0;"><strong>Email:</strong> <a href="mailto:${email}" style="color: #db2777;">${email}</a></p>
+                <p style="margin: 12px 0 0 0; white-space: pre-wrap; color: #1e293b;">${message}</p>
               </div>
-              <footer style="margin-top: 24px; color: #64748b; font-size: 12px;">Sent via Thumblify AI Thumbnail Generator</footer>
+              <p style="font-size: 12px; color: #94a3b8;">Click reply in your mail app to respond directly to the sender.</p>
             </div>
           `,
-        }).then((info) => {
-          console.log(`✅ Admin email sent! Message ID: ${info.messageId}`);
-        }).catch((err) => {
-          console.error(`❌ Admin email error: ${err.message}`);
         });
 
-        // 2. Send user auto-reply email (background async)
-        transporter.sendMail({
-          from: emailUser,
+        // 2. Send User Confirmation Auto-Reply Email
+        const sendUserPromise = transporter.sendMail({
+          from: `"Thumblify Support" <${emailUser}>`,
           to: email,
           subject: "✨ Thanks for reaching out to Thumblify!",
           text: `Hi ${name},\n\nThank you for reaching out to Thumblify! We've received your message:\n"${message}"\n\nBest regards,\nThe Thumblify Team`,
           html: `
-            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 24px; background: #0f172a; border-radius: 12px; color: #f8fafc;">
+            <div style="font-family: Arial, sans-serif; max-width: 580px; margin: auto; padding: 24px; background: #0f172a; border-radius: 12px; color: #f8fafc;">
               <h2 style="color: #ec4899; margin-top: 0;">Hi ${name},</h2>
               <p style="color: #cbd5e1; line-height: 1.6;">Thank you for reaching out to <strong>Thumblify</strong>! We've received your message and will get back to you shortly.</p>
               <div style="margin: 20px 0; padding: 16px; background: #1e293b; border-radius: 8px;">
@@ -75,20 +68,21 @@ export const sendContactEmail = async (req: Request, res: Response) => {
               <p style="color: #cbd5e1;">Best regards,<br/><strong>The Thumblify Team</strong></p>
             </div>
           `,
-        }).then((info) => {
-          console.log(`✅ User auto-reply sent! Message ID: ${info.messageId}`);
-        }).catch((err) => {
-          console.warn(`⚠️ User auto-reply warning: ${err.message}`);
-        });
+        }).catch((err) => console.warn("⚠️ User auto-reply warning:", err.message));
+
+        // Await admin email dispatch with 6-second max safety timeout
+        await Promise.race([
+          sendAdminPromise,
+          new Promise((resolve) => setTimeout(resolve, 6000)),
+        ]);
 
       } catch (mailErr: any) {
-        console.warn("⚠️ Nodemailer transport setup error:", mailErr.message);
+        console.warn("⚠️ Nodemailer transport error:", mailErr.message);
       }
     } else {
       console.warn("⚠️ EMAIL or EMAIL_PASS environment variables not set in server environment.");
     }
 
-    // Return INSTANT 200 OK response to frontend
     return res.status(200).json({ success: true, message: "Message sent successfully!" });
 
   } catch (error: any) {
