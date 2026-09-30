@@ -58,33 +58,41 @@ export const sendContactEmail = async (req: Request, res: Response) => {
           `,
         };
 
-        const adminInfo = await transporter.sendMail(adminMailOptions);
-        console.log(`✅ Admin notification email delivered to owner mailbox! Message ID: ${adminInfo.messageId}`);
-
         // 2. User Auto-Reply Confirmation
-        try {
-          const userMailOptions = {
-            from: `"Thumblify Support" <${emailUser}>`,
-            to: trimmedEmail,
-            subject: "✨ Thanks for reaching out to Thumblify!",
-            text: `Hi ${trimmedName},\n\nThank you for reaching out to Thumblify! We've received your message:\n"${trimmedMessage}"\n\nBest regards,\nThe Thumblify Team`,
-            html: `
-              <div style="font-family: Arial, sans-serif; max-width: 580px; margin: auto; padding: 24px; background: #0f172a; border-radius: 12px; color: #f8fafc;">
-                <h2 style="color: #ec4899; margin-top: 0;">Hi ${trimmedName},</h2>
-                <p style="color: #cbd5e1; line-height: 1.6;">Thank you for reaching out to <strong>Thumblify</strong>! We've received your message and will get back to you shortly.</p>
-                <div style="margin: 20px 0; padding: 16px; background: #1e293b; border-radius: 8px;">
-                  <p style="margin: 0; color: #94a3b8; font-size: 13px;">Your Message:</p>
-                  <p style="margin: 8px 0 0 0; color: #f1f5f9; font-style: italic;">"${trimmedMessage}"</p>
-                </div>
-                <p style="color: #cbd5e1;">Best regards,<br/><strong>The Thumblify Team</strong></p>
+        const userMailOptions = {
+          from: `"Thumblify Support" <${emailUser}>`,
+          to: trimmedEmail,
+          subject: "✨ Thanks for reaching out to Thumblify!",
+          text: `Hi ${trimmedName},\n\nThank you for reaching out to Thumblify! We've received your message:\n"${trimmedMessage}"\n\nBest regards,\nThe Thumblify Team`,
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 580px; margin: auto; padding: 24px; background: #0f172a; border-radius: 12px; color: #f8fafc;">
+              <h2 style="color: #ec4899; margin-top: 0;">Hi ${trimmedName},</h2>
+              <p style="color: #cbd5e1; line-height: 1.6;">Thank you for reaching out to <strong>Thumblify</strong>! We've received your message and will get back to you shortly.</p>
+              <div style="margin: 20px 0; padding: 16px; background: #1e293b; border-radius: 8px;">
+                <p style="margin: 0; color: #94a3b8; font-size: 13px;">Your Message:</p>
+                <p style="margin: 8px 0 0 0; color: #f1f5f9; font-style: italic;">"${trimmedMessage}"</p>
               </div>
-            `,
-          };
-          await transporter.sendMail(userMailOptions);
-          console.log(`✅ User auto-reply delivered to ${trimmedEmail}`);
-        } catch (userErr: any) {
-          console.warn("⚠️ User auto-reply skipped:", userErr.message);
-        }
+              <p style="color: #cbd5e1;">Best regards,<br/><strong>The Thumblify Team</strong></p>
+            </div>
+          `,
+        };
+
+        // Dispatch both emails concurrently in parallel (cuts delivery time in half)
+        await Promise.allSettled([
+          transporter.sendMail(adminMailOptions),
+          transporter.sendMail(userMailOptions),
+        ]).then((results) => {
+          if (results[0].status === "fulfilled") {
+            console.log(`✅ Admin notification email delivered to owner mailbox! Message ID: ${results[0].value.messageId}`);
+          } else {
+            console.error("❌ Admin mailer error:", results[0].reason?.message);
+          }
+          if (results[1].status === "fulfilled") {
+            console.log(`✅ User auto-reply delivered to ${trimmedEmail}`);
+          } else {
+            console.warn("⚠️ User auto-reply skipped:", results[1].reason?.message);
+          }
+        });
 
       } catch (mailErr: any) {
         console.error("❌ Admin mailer error:", mailErr.message);
