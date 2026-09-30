@@ -8,6 +8,7 @@ import AuthRouter from "./routes/AuthRoutes.js";
 import ThumbnailRouter from "./routes/ThumbnailRoutes.js";
 import UserRouter from "./routes/UserRoutes.js";
 import ResetPassword from "./routes/ResetPassword.js";
+import ContactRouter from "./routes/ContactRoutes.js";
 
 
 
@@ -107,6 +108,8 @@ app.use('/api/auth', AuthRouter);
 app.use('/api/thumbnail',ThumbnailRouter)
 
 app.use('/api/user',UserRouter)
+
+app.use('/api/contact', ContactRouter);
 
 
 const port = process.env.PORT || 3000;

@@ -3,7 +3,7 @@ import { useState } from "react";
 import SectionTitle from "../components/SectionTitle";
 import { ArrowRightIcon, MailIcon, UserIcon, AlertCircle, Loader2, CheckCircle } from "lucide-react";
 import { motion } from "motion/react";
-import emailjs from "@emailjs/browser";
+import api from "../configs/api";
 
 export default function ContactSection() {
 
@@ -16,12 +16,6 @@ export default function ContactSection() {
     const [errors, setErrors] = useState<any>({});
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [status, setStatus] = useState<"idle" | "success" | "error">("idle");
-
-    // ✅ EmailJS config
-    const SERVICE_ID = 'service_s98ru0b';
-    const ADMIN_TEMPLATE = 'template_f5xl2bm';
-    const USER_TEMPLATE = 'template_c4dbh9k';
-    const PUBLIC_KEY = 'UeQsCw1C80-_HVdJL';
 
     const validateForm = () => {
         let newErrors: any = {};
@@ -56,49 +50,19 @@ export default function ContactSection() {
         setIsSubmitting(true);
         setStatus("idle");
 
-        const templateParams = {
-            from_name: formData.name,
-            from_email: formData.email,
-            message: formData.message,
-        };
-
-        let isSuccess = false;
-
         try {
-            // Send main contact notification email
-            const adminRes = await emailjs.send(
-                SERVICE_ID,
-                ADMIN_TEMPLATE,
-                templateParams,
-                PUBLIC_KEY
-            );
+            await api.post("/api/contact/send", {
+                name: formData.name,
+                email: formData.email,
+                message: formData.message,
+            });
 
-            if (adminRes.status === 200) {
-                isSuccess = true;
-            }
-
-            // Send optional user auto-reply email (do not fail form if auto-reply fails)
-            try {
-                await emailjs.send(
-                    SERVICE_ID,
-                    USER_TEMPLATE,
-                    templateParams,
-                    PUBLIC_KEY
-                );
-            } catch (userErr) {
-                console.warn("User auto-reply email failed or template missing:", userErr);
-            }
+            setStatus("success");
+            setFormData({ name: "", email: "", message: "" });
         } catch (err: any) {
-            console.error("EmailJS submission error:", err);
-            // Fallback: If EmailJS service has issue, mark as success after recording details locally
-            isSuccess = true;
+            console.error("Nodemailer contact submission error:", err);
+            setStatus("error");
         } finally {
-            if (isSuccess) {
-                setStatus("success");
-                setFormData({ name: "", email: "", message: "" });
-            } else {
-                setStatus("error");
-            }
             setIsSubmitting(false);
         }
     };
@@ -110,21 +74,6 @@ export default function ContactSection() {
                 text2="Grow your channel"
                 text3="Have questions about our Thumbnail Generator? Let's talk."
             />
-
-            {/* ✅ Status Messages */}
-            {status === "success" && (
-                <div className="flex items-center gap-2 text-green-400 mb-4">
-                    <CheckCircle className="size-5" />
-                    Message sent successfully!
-                </div>
-            )}
-
-            {status === "error" && (
-                <div className="flex items-center gap-2 text-red-400 mb-4">
-                    <AlertCircle className="size-5" />
-                    Failed to send message
-                </div>
-            )}
 
             <form
                 onSubmit={handleSubmit}
@@ -179,26 +128,49 @@ export default function ContactSection() {
                     {errors.message && <p className="text-red-400 text-xs flex items-center gap-1 mt-1"><AlertCircle className="size-3" />{errors.message}</p>}
                 </motion.div>
 
-                {/* BUTTON */}
-                <motion.button
-                    type='submit'
-                    disabled={isSubmitting}
-                    className='w-max flex items-center gap-2 bg-pink-600 hover:bg-pink-700 text-white px-10 py-3 rounded-full disabled:opacity-50'
-                    initial={{ y: 150, opacity: 0 }}
-                    whileInView={{ y: 0, opacity: 1 }}
-                >
-                    {isSubmitting ? (
-                        <>
-                            <Loader2 className="size-5 animate-spin" />
-                            Sending...
-                        </>
-                    ) : (
-                        <>
-                            Submit
-                            <ArrowRightIcon className="size-5" />
-                        </>
+                {/* BUTTON & STATUS MESSAGE */}
+                <motion.div className="sm:col-span-2 flex flex-wrap items-center gap-4 mt-2" initial={{ y: 50, opacity: 0 }} whileInView={{ y: 0, opacity: 1 }}>
+                    <button
+                        type='submit'
+                        disabled={isSubmitting}
+                        className='w-max flex items-center gap-2 bg-pink-600 hover:bg-pink-700 text-white px-10 py-3 rounded-full disabled:opacity-50 transition cursor-pointer'
+                    >
+                        {isSubmitting ? (
+                            <>
+                                <Loader2 className="size-5 animate-spin" />
+                                Sending...
+                            </>
+                        ) : (
+                            <>
+                                Submit
+                                <ArrowRightIcon className="size-5" />
+                            </>
+                        )}
+                    </button>
+
+                    {/* ✅ Status Messages */}
+                    {status === "success" && (
+                        <motion.div 
+                            initial={{ opacity: 0, x: -10 }} 
+                            animate={{ opacity: 1, x: 0 }} 
+                            className="flex items-center gap-2 px-4 py-2 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-sm font-medium"
+                        >
+                            <CheckCircle className="size-4.5 text-emerald-400" />
+                            Message sent successfully!
+                        </motion.div>
                     )}
-                </motion.button>
+
+                    {status === "error" && (
+                        <motion.div 
+                            initial={{ opacity: 0, x: -10 }} 
+                            animate={{ opacity: 1, x: 0 }} 
+                            className="flex items-center gap-2 px-4 py-2 rounded-full bg-red-500/15 border border-red-500/30 text-red-400 text-sm font-medium"
+                        >
+                            <AlertCircle className="size-4.5 text-red-400" />
+                            Failed to send message
+                        </motion.div>
+                    )}
+                </motion.div>
 
             </form>
         </div>
