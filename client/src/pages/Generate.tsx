@@ -218,9 +218,8 @@ const Generate = () => {
                     {/* Detail */}
 
                     <div className="space-y-2">
-                      <label className="block text-sm font-medium">Additional Prompt </label>
-                      <textarea value={additionalDetails} onChange={(e)=>setAdditionalDetails(e.target.value)} rows={3} placeholder="Add any specific elements, mood, or style preferences..." className="w-full px-4 py-3 rounded-lg border border-white/10 bg-white/6 text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-pink-500 resize-none"/>
-
+                      <label className="block text-sm font-medium">Description</label>
+                      <textarea value={additionalDetails} onChange={(e)=>setAdditionalDetails(e.target.value)} rows={3} placeholder="Tell AI exactly what you want to see in the thumbnail... (Describe the scene, people, objects, action, background, lighting, or composition)" className="w-full px-4 py-3 rounded-lg border border-white/10 bg-white/6 text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-pink-500 resize-none"/>
                     </div>
 
                   </div>

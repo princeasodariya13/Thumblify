@@ -2,7 +2,13 @@ import { Request, Response } from "express";
 import Thumbnail from "../models/Thumbnail.js";
 import axios from "axios";
 import { v2 as cloudinary } from "cloudinary";
-import { enhanceThumbnailPrompt } from "../services/promptEnhancer.js";
+import {
+  analyzeThumbnailRequest,
+  buildStrictFluxPrompt,
+  validateImageRelevance,
+  type DynamicSceneSpecification,
+  type EnhanceOptions,
+} from "../services/promptEnhancer.js";
 
 // Ensure Cloudinary is initialized from environment variables
 if (process.env.CLOUDINARY_URL) {
@@ -25,32 +31,12 @@ const uploadBufferToCloudinary = (buffer: Buffer): Promise<{ secure_url: string 
   });
 };
 
-/* ---------------- BUILD ENHANCED THUMBNAIL PROMPT ---------------- */
+/* ---------------- ASYNC BACKGROUND GENERATION WITH SEMANTIC VALIDATION & REGENERATION LOOP ---------------- */
 
-const buildPrompt = (
-  title: string,
-  user_prompt: string | undefined,
-  style: string,
-  color_scheme: string,
-  extraOptions: { aspect_ratio?: string; category?: string; mood?: string; text_overlay?: boolean } = {}
-): string => {
-  return enhanceThumbnailPrompt(user_prompt || "", {
-    title,
-    style,
-    color_scheme,
-    aspect_ratio: extraOptions.aspect_ratio || "16:9",
-    category: extraOptions.category,
-    mood: extraOptions.mood,
-    text_overlay: extraOptions.text_overlay,
-  });
-};
+const MAX_RETRIES = 2;
 
-
-/* ---------------- ASYNC BACKGROUND GENERATION ---------------- */
-
-const generateImageInBackground = async (thumbnailId: string, fullPrompt: string): Promise<void> => {
+const fetchSingleImageBuffer = async (promptToUse: string, thumbnailId: string): Promise<Buffer | null> => {
   let imageBuffer: Buffer | null = null;
-
   const commonHeaders = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
     "Accept": "image/webp,image/png,image/*,*/*",
@@ -69,7 +55,7 @@ const generateImageInBackground = async (thumbnailId: string, fullPrompt: string
         console.log(`🎨 [${thumbnailId}] HuggingFace ${modelPath}...`);
         const hfRes = await axios.post(
           `https://router.huggingface.co/hf-inference/models/${modelPath}`,
-          { inputs: fullPrompt },
+          { inputs: promptToUse },
           {
             headers: {
               Authorization: `Bearer ${process.env.HF_API_KEY}`,
@@ -94,7 +80,7 @@ const generateImageInBackground = async (thumbnailId: string, fullPrompt: string
   if (!imageBuffer) {
     try {
       const seed = Math.floor(Math.random() * 9999999);
-      const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(fullPrompt)}?width=1280&height=720&model=flux&seed=${seed}&nologo=true`;
+      const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(promptToUse)}?width=1280&height=720&model=flux&seed=${seed}&nologo=true`;
       console.log(`🎨 [${thumbnailId}] Pollinations flux...`);
       const res = await axios.get(url, { responseType: "arraybuffer", headers: commonHeaders, timeout: 25000 });
       if (res.status === 200 && res.data && (res.data.byteLength > 5000 || (Buffer.isBuffer(res.data) && res.data.length > 5000))) {
@@ -110,7 +96,7 @@ const generateImageInBackground = async (thumbnailId: string, fullPrompt: string
   if (!imageBuffer) {
     try {
       const seed2 = Math.floor(Math.random() * 9999999);
-      const url2 = `https://image.pollinations.ai/prompt/${encodeURIComponent(fullPrompt)}?width=1280&height=720&model=turbo&seed=${seed2}&nologo=true`;
+      const url2 = `https://image.pollinations.ai/prompt/${encodeURIComponent(promptToUse)}?width=1280&height=720&model=turbo&seed=${seed2}&nologo=true`;
       console.log(`🎨 [${thumbnailId}] Pollinations turbo...`);
       const res2 = await axios.get(url2, { responseType: "arraybuffer", headers: commonHeaders, timeout: 20000 });
       if (res2.status === 200 && res2.data && (res2.data.byteLength > 5000 || (Buffer.isBuffer(res2.data) && res2.data.length > 5000))) {
@@ -122,68 +108,50 @@ const generateImageInBackground = async (thumbnailId: string, fullPrompt: string
     }
   }
 
-  /* 3. FALLBACK: Pollinations default (no model specified) */
-  if (!imageBuffer) {
-    try {
-      const seed3 = Math.floor(Math.random() * 9999999);
-      const url3 = `https://image.pollinations.ai/prompt/${encodeURIComponent(fullPrompt)}?width=1280&height=720&seed=${seed3}&nologo=true`;
-      console.log(`🎨 [${thumbnailId}] Pollinations default model...`);
-      const res3 = await axios.get(url3, { responseType: "arraybuffer", headers: commonHeaders, timeout: 20000 });
-      if (res3.status === 200 && res3.data && (res3.data.byteLength > 5000 || (Buffer.isBuffer(res3.data) && res3.data.length > 5000))) {
-        imageBuffer = Buffer.from(res3.data);
-        console.log(`✅ [${thumbnailId}] default model OK: ${imageBuffer.length} bytes`);
-      }
-    } catch (e: any) {
-      console.warn(`⚠️ [${thumbnailId}] default model failed: ${e.message}`);
-    }
-  }
+  return imageBuffer;
+};
 
-  /* 4. LAST RESORT: HuggingFace FLUX.1-schnell */
-  if (!imageBuffer && process.env.HF_API_KEY) {
-    try {
-      console.log(`🎨 [${thumbnailId}] HuggingFace FLUX.1-schnell...`);
-      const hfRes = await axios.post(
-        "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell",
-        { inputs: fullPrompt },
-        {
-          headers: {
-            Authorization: `Bearer ${process.env.HF_API_KEY}`,
-            "Content-Type": "application/json",
-            "Accept": "image/jpeg",
-          },
-          responseType: "arraybuffer",
-          timeout: 25000,
-        }
-      );
-      if (hfRes.status === 200 && hfRes.data) {
-        imageBuffer = Buffer.from(hfRes.data);
-        console.log(`✅ [${thumbnailId}] HuggingFace OK: ${imageBuffer.length} bytes`);
-      }
-    } catch (e: any) {
-      console.warn(`⚠️ [${thumbnailId}] HuggingFace failed: ${e.message}`);
-    }
-  }
+const generateImageInBackground = async (
+  thumbnailId: string,
+  initialPrompt: string,
+  sceneSpec: DynamicSceneSpecification
+): Promise<void> => {
+  let imageBuffer: Buffer | null = null;
+  let attempt = 0;
+  let currentPrompt = initialPrompt;
 
-  /* 5. GUARANTEED FALLBACK: HD Photo Engine */
-  if (!imageBuffer) {
-    try {
-      const fallbackSeed = Math.floor(Math.random() * 999999);
-      console.log(`🎨 [${thumbnailId}] HD Photo Engine fallback...`);
-      const fallbackRes = await axios.get(`https://picsum.photos/seed/${fallbackSeed}/1280/720`, {
-        responseType: "arraybuffer",
-        timeout: 15000,
-      });
-      if (fallbackRes.status === 200 && fallbackRes.data) {
-        imageBuffer = Buffer.from(fallbackRes.data);
-        console.log(`✅ [${thumbnailId}] HD Photo Engine OK: ${imageBuffer.length} bytes`);
+  // Semantic Generation & Validation Loop
+  while (attempt <= MAX_RETRIES && !imageBuffer) {
+    attempt++;
+    console.log(`🚀 [${thumbnailId}] Generation Attempt ${attempt}/${MAX_RETRIES + 1}`);
+
+    const candidateBuffer = await fetchSingleImageBuffer(currentPrompt, thumbnailId);
+
+    if (candidateBuffer) {
+      // Perform Semantic Relevance Validation
+      const validation = await validateImageRelevance(candidateBuffer, sceneSpec);
+      console.log(`🔍 [${thumbnailId}] Semantic Validation Score: ${validation.score} (Relevant: ${validation.relevant})`);
+
+      if (validation.relevant) {
+        imageBuffer = candidateBuffer;
+        console.log(`✅ [${thumbnailId}] Semantic Validation Passed!`);
+        break;
+      } else {
+        console.warn(
+          `⚠️ [${thumbnailId}] Validation rejected attempt ${attempt}. Missing: ${validation.missingElements.join(
+            ", "
+          )}. Unexpected: ${validation.unexpectedElements.join(", ")}`
+        );
+        // Correct prompt for retry attempt
+        currentPrompt = `STRICT ACCURATE SCENE RE-RENDER: Ensure primary visual subject (${sceneSpec.primarySubject}) is the dominant centerpiece. ABSOLUTELY NO ${sceneSpec.forbiddenElements.slice(0, 5).join(", ")}.\n\n${initialPrompt}`;
       }
-    } catch (e: any) {
-      console.warn(`⚠️ [${thumbnailId}] HD Photo Engine failed: ${e.message}`);
+    } else {
+      console.warn(`⚠️ [${thumbnailId}] Attempt ${attempt} failed to produce image buffer.`);
     }
   }
 
   if (!imageBuffer) {
-    console.error(`❌ [${thumbnailId}] All engines failed.`);
+    console.error(`❌ [${thumbnailId}] All engines and retries failed.`);
     await Thumbnail.findByIdAndUpdate(thumbnailId, { isGenerating: false });
     return;
   }
@@ -195,7 +163,7 @@ const generateImageInBackground = async (thumbnailId: string, fullPrompt: string
     finalImageUrl = cloudResult.secure_url;
     console.log(`✅ [${thumbnailId}] Cloudinary OK: ${finalImageUrl}`);
   } catch (cloudErr: any) {
-    console.warn(`⚠️ [${thumbnailId}] Cloudinary failed, using base64: ${cloudErr.message}`);
+    console.warn(`⚠️ [${thumbnailId}] Cloudinary failed, using base64 fallback: ${cloudErr.message}`);
     finalImageUrl = `data:image/jpeg;base64,${imageBuffer.toString("base64")}`;
   }
 
@@ -223,7 +191,7 @@ export const regenerateThumbnail = async (req: Request, res: Response) => {
       return res.status(404).json({ message: "Thumbnail not found." });
     }
 
-    // Get optional updated fields from body (user may have changed title/prompt/style etc.)
+    // Get optional updated fields from body
     const { title, prompt: user_prompt, style, aspect_ratio, color_scheme } = req.body;
 
     // Update fields if provided
@@ -238,21 +206,21 @@ export const regenerateThumbnail = async (req: Request, res: Response) => {
     thumbnail.image_url = "";
     await thumbnail.save();
 
-    const fullPrompt = buildPrompt(
-      thumbnail.title,
-      thumbnail.prompt_used || undefined,
-      thumbnail.style || "Bold & Graphic",
-      thumbnail.color_scheme || "vibrant",
-      {
-        aspect_ratio: thumbnail.aspect_ratio || "16:9",
-        text_overlay: thumbnail.text_overlay,
-      }
-    );
+    const options: EnhanceOptions = {
+      title: thumbnail.title,
+      style: thumbnail.style || "Bold & Graphic",
+      color_scheme: thumbnail.color_scheme || "vibrant",
+      aspect_ratio: thumbnail.aspect_ratio || "16:9",
+      text_overlay: thumbnail.text_overlay,
+    };
+
+    const sceneSpec = analyzeThumbnailRequest(thumbnail.prompt_used || "", options);
+    const fullPrompt = buildStrictFluxPrompt(sceneSpec, options);
 
     console.log(`🔄 [${thumbnail._id}] Regenerating async...`);
-    console.log(`✨ Enhanced FLUX Prompt: ${fullPrompt}`);
+    console.log(`✨ Scene Intent: "${sceneSpec.intent}"`);
 
-    generateImageInBackground(thumbnail._id.toString(), fullPrompt).catch((err) => {
+    generateImageInBackground(thumbnail._id.toString(), fullPrompt, sceneSpec).catch((err) => {
       console.error(`❌ Regen crash [${thumbnail._id}]:`, err.message);
     });
 
@@ -292,7 +260,7 @@ export const generateThumbnail = async (req: Request, res: Response) => {
       return res.status(400).json({ message: "Thumbnail title is required." });
     }
 
-    /* Save draft record immediately — this is what the client gets back */
+    /* Save draft record immediately */
     const thumbnail = await Thumbnail.create({
       userId,
       title,
@@ -304,30 +272,25 @@ export const generateThumbnail = async (req: Request, res: Response) => {
       isGenerating: true,
     });
 
-    const fullPrompt = buildPrompt(
+    const options: EnhanceOptions = {
       title,
-      user_prompt,
-      style || "Bold & Graphic",
-      color_scheme || "vibrant",
-      {
-        aspect_ratio: aspect_ratio || "16:9",
-        text_overlay: !!text_overlay,
-      }
-    );
+      style: style || "Bold & Graphic",
+      color_scheme: color_scheme || "vibrant",
+      aspect_ratio: aspect_ratio || "16:9",
+      text_overlay: !!text_overlay,
+    };
+
+    const sceneSpec = analyzeThumbnailRequest(user_prompt || "", options);
+    const fullPrompt = buildStrictFluxPrompt(sceneSpec, options);
 
     console.log(`🚀 [${thumbnail._id}] Async generation started`);
-    console.log(`✨ Enhanced FLUX Prompt: ${fullPrompt}`);
+    console.log(`✨ Scene Intent: "${sceneSpec.intent}"`);
 
-    /*
-     * Fire-and-forget — generation happens AFTER we respond.
-     * The client navigates to /generate/:id and polls every 5s
-     * via fetchThumbnail() until isGenerating becomes false.
-     */
-    generateImageInBackground(thumbnail._id.toString(), fullPrompt).catch((err) => {
+    /* Fire-and-forget generation */
+    generateImageInBackground(thumbnail._id.toString(), fullPrompt, sceneSpec).catch((err) => {
       console.error(`❌ Background crash [${thumbnail._id}]:`, err.message);
     });
 
-    /* Respond immediately — no timeout risk */
     return res.json({
       message: "Thumbnail is being generated...",
       thumbnail,
@@ -340,8 +303,6 @@ export const generateThumbnail = async (req: Request, res: Response) => {
     });
   }
 };
-
-
 
 /* ---------------- DELETE THUMBNAIL ---------------- */
 
@@ -381,9 +342,9 @@ export const togglePublicStatus = async (req: Request, res: Response) => {
     thumbnail.isPublic = !thumbnail.isPublic;
     await thumbnail.save();
 
-    return res.json({ 
+    return res.json({
       message: thumbnail.isPublic ? "Thumbnail is now public" : "Thumbnail is now private",
-      isPublic: thumbnail.isPublic
+      isPublic: thumbnail.isPublic,
     });
   } catch (error: any) {
     return res.status(500).json({ message: error.message });
@@ -396,7 +357,7 @@ export const getCommunityThumbnails = async (req: Request, res: Response) => {
   try {
     const thumbnails = await Thumbnail.find({ isPublic: true })
       .sort({ createdAt: -1 })
-      .populate('userId', 'name')
+      .populate("userId", "name")
       .limit(50);
 
     return res.json({ thumbnails });
