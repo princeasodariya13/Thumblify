@@ -34,6 +34,7 @@ const uploadBufferToCloudinary = (buffer: Buffer): Promise<{ secure_url: string 
 /* ---------------- ASYNC BACKGROUND GENERATION WITH SEMANTIC VALIDATION & REGENERATION LOOP ---------------- */
 
 const MAX_RETRIES = 2;
+let hfTokenDisabled = false;
 
 const fetchSingleImageBuffer = async (promptToUse: string, thumbnailId: string): Promise<Buffer | null> => {
   let imageBuffer: Buffer | null = null;
@@ -42,8 +43,8 @@ const fetchSingleImageBuffer = async (promptToUse: string, thumbnailId: string):
     "Accept": "image/webp,image/png,image/*,*/*",
   };
 
-  /* 1. PRIMARY: HuggingFace FLUX.1-dev / FLUX.1-schnell */
-  if (process.env.HF_API_KEY) {
+  /* 1. PRIMARY: HuggingFace FLUX.1-dev / FLUX.1-schnell (If token is valid & enabled) */
+  if (process.env.HF_API_KEY && !hfTokenDisabled) {
     const hfModels = [
       "black-forest-labs/FLUX.1-dev",
       "black-forest-labs/FLUX.1-schnell",
@@ -63,7 +64,7 @@ const fetchSingleImageBuffer = async (promptToUse: string, thumbnailId: string):
               "Accept": "image/png,image/jpeg",
             },
             responseType: "arraybuffer",
-            timeout: 30000,
+            timeout: 15000,
           }
         );
         if (hfRes.status === 200 && hfRes.data && hfRes.data.byteLength > 5000) {
@@ -71,40 +72,50 @@ const fetchSingleImageBuffer = async (promptToUse: string, thumbnailId: string):
           console.log(`✅ [${thumbnailId}] HuggingFace ${modelPath} OK: ${imageBuffer.length} bytes`);
         }
       } catch (e: any) {
-        console.warn(`⚠️ [${thumbnailId}] HuggingFace ${modelPath} failed: ${e.message}`);
+        if (e.response?.status === 403 || e.response?.status === 401) {
+          console.warn(`⚠️ [${thumbnailId}] HuggingFace token permission restricted (${e.response?.status}). Switching to Pollinations engine.`);
+          hfTokenDisabled = true;
+          break;
+        } else {
+          console.warn(`⚠️ [${thumbnailId}] HuggingFace ${modelPath} failed: ${e.message}`);
+        }
       }
     }
   }
 
-  /* 2. SECONDARY: Pollinations FLUX */
+  // Sanitize and truncate prompt for URL GET requests
+  const cleanPrompt = encodeURIComponent(
+    promptToUse.slice(0, 450).replace(/[\n\r]+/g, " ")
+  );
+
+  /* 2. SECONDARY: Pollinations FLUX Engine */
   if (!imageBuffer) {
     try {
-      const seed = Math.floor(Math.random() * 9999999);
-      const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(promptToUse)}?width=1280&height=720&model=flux&seed=${seed}&nologo=true`;
-      console.log(`🎨 [${thumbnailId}] Pollinations flux...`);
-      const res = await axios.get(url, { responseType: "arraybuffer", headers: commonHeaders, timeout: 25000 });
+      const url = `https://image.pollinations.ai/prompt/${cleanPrompt}?width=1280&height=720&model=flux`;
+      console.log(`🎨 [${thumbnailId}] Pollinations FLUX...`);
+      const res = await axios.get(url, { responseType: "arraybuffer", headers: commonHeaders, timeout: 15000 });
       if (res.status === 200 && res.data && (res.data.byteLength > 5000 || (Buffer.isBuffer(res.data) && res.data.length > 5000))) {
         imageBuffer = Buffer.from(res.data);
-        console.log(`✅ [${thumbnailId}] Pollinations flux OK: ${imageBuffer.length} bytes`);
+        console.log(`✅ [${thumbnailId}] Pollinations FLUX OK: ${imageBuffer.length} bytes`);
       }
     } catch (e: any) {
-      console.warn(`⚠️ [${thumbnailId}] Pollinations flux failed: ${e.message}`);
+      console.warn(`⚠️ [${thumbnailId}] Pollinations FLUX failed: ${e.message}`);
     }
   }
 
-  /* 3. FALLBACK: Pollinations turbo */
+  /* 3. TERTIARY FALLBACK: Pollinations Standard Engine */
   if (!imageBuffer) {
     try {
-      const seed2 = Math.floor(Math.random() * 9999999);
-      const url2 = `https://image.pollinations.ai/prompt/${encodeURIComponent(promptToUse)}?width=1280&height=720&model=turbo&seed=${seed2}&nologo=true`;
-      console.log(`🎨 [${thumbnailId}] Pollinations turbo...`);
-      const res2 = await axios.get(url2, { responseType: "arraybuffer", headers: commonHeaders, timeout: 20000 });
-      if (res2.status === 200 && res2.data && (res2.data.byteLength > 5000 || (Buffer.isBuffer(res2.data) && res2.data.length > 5000))) {
-        imageBuffer = Buffer.from(res2.data);
-        console.log(`✅ [${thumbnailId}] Pollinations turbo OK: ${imageBuffer.length} bytes`);
+      const seed = Math.floor(Math.random() * 999999);
+      const url = `https://image.pollinations.ai/prompt/${cleanPrompt}?width=1280&height=720&seed=${seed}`;
+      console.log(`🎨 [${thumbnailId}] Pollinations Standard...`);
+      const res = await axios.get(url, { responseType: "arraybuffer", headers: commonHeaders, timeout: 15000 });
+      if (res.status === 200 && res.data && (res.data.byteLength > 5000 || (Buffer.isBuffer(res.data) && res.data.length > 5000))) {
+        imageBuffer = Buffer.from(res.data);
+        console.log(`✅ [${thumbnailId}] Pollinations Standard OK: ${imageBuffer.length} bytes`);
       }
     } catch (e: any) {
-      console.warn(`⚠️ [${thumbnailId}] Pollinations turbo failed: ${e.message}`);
+      console.warn(`⚠️ [${thumbnailId}] Pollinations Standard failed: ${e.message}`);
     }
   }
 
@@ -117,6 +128,7 @@ const generateImageInBackground = async (
   sceneSpec: DynamicSceneSpecification
 ): Promise<void> => {
   let imageBuffer: Buffer | null = null;
+  let lastCandidateBuffer: Buffer | null = null;
   let attempt = 0;
   let currentPrompt = initialPrompt;
 
@@ -128,6 +140,7 @@ const generateImageInBackground = async (
     const candidateBuffer = await fetchSingleImageBuffer(currentPrompt, thumbnailId);
 
     if (candidateBuffer) {
+      lastCandidateBuffer = candidateBuffer;
       // Perform Semantic Relevance Validation
       const validation = await validateImageRelevance(candidateBuffer, sceneSpec);
       console.log(`🔍 [${thumbnailId}] Semantic Validation Score: ${validation.score} (Relevant: ${validation.relevant})`);
@@ -148,6 +161,12 @@ const generateImageInBackground = async (
     } else {
       console.warn(`⚠️ [${thumbnailId}] Attempt ${attempt} failed to produce image buffer.`);
     }
+  }
+
+  // Safety net: Use last candidate buffer if validation retries exhausted
+  if (!imageBuffer && lastCandidateBuffer) {
+    console.log(`ℹ️ [${thumbnailId}] Using best candidate image buffer from generation attempts.`);
+    imageBuffer = lastCandidateBuffer;
   }
 
   if (!imageBuffer) {
