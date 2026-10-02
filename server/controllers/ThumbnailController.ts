@@ -2,43 +2,12 @@ import { Request, Response } from "express";
 import Thumbnail from "../models/Thumbnail.js";
 import axios from "axios";
 import { v2 as cloudinary } from "cloudinary";
+import { enhanceThumbnailPrompt } from "../services/promptEnhancer.js";
 
 // Ensure Cloudinary is initialized from environment variables
 if (process.env.CLOUDINARY_URL) {
   cloudinary.config();
 }
-
-/* ---------------- STYLE PROMPTS ---------------- */
-
-const stylePrompts: Record<string, string> = {
-  "Bold & Graphic":
-    "dramatic studio lighting, bold vibrant colors, high contrast, powerful emotional expression, dynamic angle, sharp focus, striking visual impact, professional photography",
-
-  "Tech/Futuristic":
-    "futuristic sci-fi, glowing cyan holographic elements, dark background, neon light accents, high-tech digital overlays, cinematic sci-fi lighting, cyberpunk aesthetic",
-
-  "Minimalist":
-    "clean minimalist layout, soft studio lighting, dark negative space, single focused subject, premium modern design, refined and sophisticated",
-
-  "Photorealistic":
-    "hyperrealistic photo, Canon EOS R5, 50mm lens, f/2.0 aperture, shallow depth of field, soft bokeh, natural light, sharp subject focus, editorial quality",
-
-  "Illustrated":
-    "vibrant digital illustration, bold flat design, clean vector style, pop-art color palette, cel-shading, sharp line art, modern graphic style",
-};
-
-/* ---------------- COLOR SCHEMES ---------------- */
-
-const colorSchemeDescriptions: Record<string, string> = {
-  vibrant: "vivid saturated colors, bold complementary contrasts, eye-popping visual energy",
-  sunset: "warm golden sunset, amber and coral oranges, deep magenta purple sky, cinematic dusk",
-  forest: "rich deep greens, earthy warm browns, golden dappled sunlight, lush organic palette",
-  neon: "electric neon glow, hot pink and cyan streaks, deep dark background, cyberpunk lighting",
-  purple: "deep royal purple, indigo and violet hues, moody premium atmosphere, soft lilac highlights",
-  monochrome: "high-contrast black and white, dramatic deep shadows, stark highlights, timeless B&W",
-  ocean: "cool deep ocean blues, bright turquoise and teal, seafoam accents, crystal aquatic atmosphere",
-  pastel: "soft dreamy pastel palette, light airy tones, gentle blush pinks and baby blues, calming",
-};
 
 // Helper: Upload image buffer directly to Cloudinary without writing to disk
 const uploadBufferToCloudinary = (buffer: Buffer): Promise<{ secure_url: string }> => {
@@ -56,53 +25,24 @@ const uploadBufferToCloudinary = (buffer: Buffer): Promise<{ secure_url: string 
   });
 };
 
-/* ---------------- BUILD OPTIMIZED PROMPT ---------------- */
-
-// Words that describe quality/style but are NOT visual subjects
-// Strip these from the subject so AI focuses on what to actually draw
-const META_WORDS = /\b(make it|8k|4k|hd|ultra|high quality|natural|perfect|beautiful|amazing|best|generate|create|render|realistic|photo|image|thumbnail)\b/gi;
-const CONJUNCTIONS = /\b(and|or|with|in|a|the|of|for)\b/gi;
+/* ---------------- BUILD ENHANCED THUMBNAIL PROMPT ---------------- */
 
 const buildPrompt = (
   title: string,
   user_prompt: string | undefined,
   style: string,
-  color_scheme: string
+  color_scheme: string,
+  extraOptions: { aspect_ratio?: string; category?: string; mood?: string; text_overlay?: boolean } = {}
 ): string => {
-  const selectedStyle = stylePrompts[style] || stylePrompts["Bold & Graphic"];
-  const selectedColor = colorSchemeDescriptions[color_scheme] || colorSchemeDescriptions["vibrant"];
-
-  // Title is ALWAYS the primary visual subject — never omit it
-  const cleanTitle = title.trim();
-
-  // Extract only visual details from the description (strip meta-instructions)
-  let visualDetails = "";
-  if (user_prompt && user_prompt.trim().length > 0) {
-    const cleaned = user_prompt.trim().replace(META_WORDS, "").replace(/\s{2,}/g, " ").trim();
-    const meaningful = cleaned.replace(CONJUNCTIONS, "").replace(/\s{2,}/g, " ").trim();
-    if (meaningful.length > 2) {
-      visualDetails = cleaned;
-    }
-  }
-
-  // Build subject: title first, then visual details from description
-  const subject = visualDetails
-    ? `${cleanTitle}, ${visualDetails}`
-    : cleanTitle;
-
-  // Full prompt: subject → style → color → universal quality boosters
-  const prompt = [
-    subject,
-    selectedStyle,
-    selectedColor,
-    "photorealistic 8K resolution",
-    "cinematic wide composition",
-    "professional YouTube thumbnail style",
-    "no text, no watermarks, no logos",
-    "sharp focus, highly detailed",
-  ].join(", ");
-
-  return prompt;
+  return enhanceThumbnailPrompt(user_prompt || "", {
+    title,
+    style,
+    color_scheme,
+    aspect_ratio: extraOptions.aspect_ratio || "16:9",
+    category: extraOptions.category,
+    mood: extraOptions.mood,
+    text_overlay: extraOptions.text_overlay,
+  });
 };
 
 
@@ -116,21 +56,57 @@ const generateImageInBackground = async (thumbnailId: string, fullPrompt: string
     "Accept": "image/webp,image/png,image/*,*/*",
   };
 
-  /* 1. PRIMARY: Pollinations flux */
-  try {
-    const seed = Math.floor(Math.random() * 9999999);
-    const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(fullPrompt)}?width=1280&height=720&model=flux&seed=${seed}&nologo=true`;
-    console.log(`🎨 [${thumbnailId}] Pollinations flux...`);
-    const res = await axios.get(url, { responseType: "arraybuffer", headers: commonHeaders, timeout: 25000 });
-    if (res.status === 200 && res.data && (res.data.byteLength > 5000 || (Buffer.isBuffer(res.data) && res.data.length > 5000))) {
-      imageBuffer = Buffer.from(res.data);
-      console.log(`✅ [${thumbnailId}] flux OK: ${imageBuffer.length} bytes`);
+  /* 1. PRIMARY: HuggingFace FLUX.1-dev / FLUX.1-schnell */
+  if (process.env.HF_API_KEY) {
+    const hfModels = [
+      "black-forest-labs/FLUX.1-dev",
+      "black-forest-labs/FLUX.1-schnell",
+    ];
+
+    for (const modelPath of hfModels) {
+      if (imageBuffer) break;
+      try {
+        console.log(`🎨 [${thumbnailId}] HuggingFace ${modelPath}...`);
+        const hfRes = await axios.post(
+          `https://router.huggingface.co/hf-inference/models/${modelPath}`,
+          { inputs: fullPrompt },
+          {
+            headers: {
+              Authorization: `Bearer ${process.env.HF_API_KEY}`,
+              "Content-Type": "application/json",
+              "Accept": "image/png,image/jpeg",
+            },
+            responseType: "arraybuffer",
+            timeout: 30000,
+          }
+        );
+        if (hfRes.status === 200 && hfRes.data && hfRes.data.byteLength > 5000) {
+          imageBuffer = Buffer.from(hfRes.data);
+          console.log(`✅ [${thumbnailId}] HuggingFace ${modelPath} OK: ${imageBuffer.length} bytes`);
+        }
+      } catch (e: any) {
+        console.warn(`⚠️ [${thumbnailId}] HuggingFace ${modelPath} failed: ${e.message}`);
+      }
     }
-  } catch (e: any) {
-    console.warn(`⚠️ [${thumbnailId}] flux failed: ${e.message}`);
   }
 
-  /* 2. FALLBACK: Pollinations turbo */
+  /* 2. SECONDARY: Pollinations FLUX */
+  if (!imageBuffer) {
+    try {
+      const seed = Math.floor(Math.random() * 9999999);
+      const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(fullPrompt)}?width=1280&height=720&model=flux&seed=${seed}&nologo=true`;
+      console.log(`🎨 [${thumbnailId}] Pollinations flux...`);
+      const res = await axios.get(url, { responseType: "arraybuffer", headers: commonHeaders, timeout: 25000 });
+      if (res.status === 200 && res.data && (res.data.byteLength > 5000 || (Buffer.isBuffer(res.data) && res.data.length > 5000))) {
+        imageBuffer = Buffer.from(res.data);
+        console.log(`✅ [${thumbnailId}] Pollinations flux OK: ${imageBuffer.length} bytes`);
+      }
+    } catch (e: any) {
+      console.warn(`⚠️ [${thumbnailId}] Pollinations flux failed: ${e.message}`);
+    }
+  }
+
+  /* 3. FALLBACK: Pollinations turbo */
   if (!imageBuffer) {
     try {
       const seed2 = Math.floor(Math.random() * 9999999);
@@ -139,10 +115,10 @@ const generateImageInBackground = async (thumbnailId: string, fullPrompt: string
       const res2 = await axios.get(url2, { responseType: "arraybuffer", headers: commonHeaders, timeout: 20000 });
       if (res2.status === 200 && res2.data && (res2.data.byteLength > 5000 || (Buffer.isBuffer(res2.data) && res2.data.length > 5000))) {
         imageBuffer = Buffer.from(res2.data);
-        console.log(`✅ [${thumbnailId}] turbo OK: ${imageBuffer.length} bytes`);
+        console.log(`✅ [${thumbnailId}] Pollinations turbo OK: ${imageBuffer.length} bytes`);
       }
     } catch (e: any) {
-      console.warn(`⚠️ [${thumbnailId}] turbo failed: ${e.message}`);
+      console.warn(`⚠️ [${thumbnailId}] Pollinations turbo failed: ${e.message}`);
     }
   }
 
@@ -266,10 +242,15 @@ export const regenerateThumbnail = async (req: Request, res: Response) => {
       thumbnail.title,
       thumbnail.prompt_used || undefined,
       thumbnail.style || "Bold & Graphic",
-      thumbnail.color_scheme || "vibrant"
+      thumbnail.color_scheme || "vibrant",
+      {
+        aspect_ratio: thumbnail.aspect_ratio || "16:9",
+        text_overlay: thumbnail.text_overlay,
+      }
     );
 
     console.log(`🔄 [${thumbnail._id}] Regenerating async...`);
+    console.log(`✨ Enhanced FLUX Prompt: ${fullPrompt}`);
 
     generateImageInBackground(thumbnail._id.toString(), fullPrompt).catch((err) => {
       console.error(`❌ Regen crash [${thumbnail._id}]:`, err.message);
@@ -323,10 +304,19 @@ export const generateThumbnail = async (req: Request, res: Response) => {
       isGenerating: true,
     });
 
-    const fullPrompt = buildPrompt(title, user_prompt, style || "Bold & Graphic", color_scheme || "vibrant");
+    const fullPrompt = buildPrompt(
+      title,
+      user_prompt,
+      style || "Bold & Graphic",
+      color_scheme || "vibrant",
+      {
+        aspect_ratio: aspect_ratio || "16:9",
+        text_overlay: !!text_overlay,
+      }
+    );
 
     console.log(`🚀 [${thumbnail._id}] Async generation started`);
-    console.log(`📝 Prompt: ${fullPrompt.substring(0, 120)}...`);
+    console.log(`✨ Enhanced FLUX Prompt: ${fullPrompt}`);
 
     /*
      * Fire-and-forget — generation happens AFTER we respond.
